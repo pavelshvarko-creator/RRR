@@ -1,0 +1,89 @@
+@use "../variables.scss" as *;
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.rrr-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.rrr-icon-btn {
+  width: 56px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+}
+
+.rrr-lang-select {
+  width: 56px;
+  height: 32px;
+  background: $darkest;
+  color: $font;
+  border: 1px solid $dark;
+  text-align: center;
+}
+
+.rrr-lang-custom-input {
+  text-transform: uppercase;
+  box-sizing: border-box;
+  letter-spacing: 1px;
+}
+
+.rrr-name-input {
+  width: 56px;
+  height: 32px;
+  background: $darkest;
+  color: $font;
+  border: 1px solid $dark;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.rrr-info-btn {
+  width: 15px;
+  height: 15px;
+  margin-left: 8px;
+  border-radius: 50%;
+  border: 2px solid #999;
+  background: transparent;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: bold;
+  line-height: 1;
+  padding: 0;
+
+  &:hover {
+    border-color: #ccc;
+    color: #ccc;
+  }
+  &:active {
+    border-color: #fff;
+    color: #fff;
+  }
+}
+
