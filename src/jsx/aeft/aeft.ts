@@ -257,6 +257,22 @@ function duplicateFolderWithLanguage(sourceFolderItem: FolderItem, newLang: stri
 var SETTINGS_SECTION = "RRR_Script";
 var SETTINGS_KEY_LANG = "lang";
 var SETTINGS_KEY_CREATOR = "creator";
+var SETTINGS_KEY_ICON_MODE = "iconMode";
+
+// Тумблер в гайде: показывать кнопки панели как PNG-иконки (по умолчанию)
+// или как стандартные текстовые кнопки (как в старом ScriptUI, если бы
+// иконки не были найдены). Настройка общая на всё расширение — сохраняется
+// в app.settings, чтобы её видели и основная панель, и гайд.
+export function getIconModeSetting(): boolean {
+  if (app.settings.haveSetting(SETTINGS_SECTION, SETTINGS_KEY_ICON_MODE)) {
+    return app.settings.getSetting(SETTINGS_SECTION, SETTINGS_KEY_ICON_MODE) !== "0";
+  }
+  return true;
+}
+
+export function setIconModeSetting(useIcons: boolean) {
+  app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_ICON_MODE, useIcons ? "1" : "0");
+}
 
 // При каждом новом запуске язык всегда начинается с EN. Name запоминается между запусками.
 export function getSavedCreatorName(): string {

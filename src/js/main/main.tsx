@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { csi, subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
 import { ns } from "../../shared/shared";
 import { IconButton } from "./IconButton";
-import { checkAndAutoInstallUpdate } from "../lib/utils/update";
 import "./main.scss";
 
 import icon9x16 from "../assets/RRR/9x16.png";
@@ -35,6 +34,7 @@ export const App = () => {
   const [name, setName] = useState("");
   const [customLangMode, setCustomLangMode] = useState(false);
   const [customLangValue, setCustomLangValue] = useState("");
+  const [useIcons, setUseIcons] = useState(true);
 
   useEffect(() => {
     if (window.cep) {
@@ -55,11 +55,19 @@ export const App = () => {
       }
     });
 
+    // Тумблер "иконки / стандартные кнопки" переключается в гайде, но
+    // применяется здесь, в основной панели — читаем сохранённое значение
+    // при каждом открытии панели.
+    evalTS("getIconModeSetting").then((saved) => setUseIcons(saved !== false));
+
     // Тихая автопроверка обновлений при каждом запуске панели (AE запущен/
-    // перезапущен). Если есть новая версия — скачивается и ставится сама;
-    // ошибки самой проверки (например нет интернета) не показываем, чтобы
+    // перезапущен). Модуль с обновлением подключаем динамически (не в
+    // самом верху файла), чтобы его код (доступ к Node.js fs/path) не мог
+    // сломать самую первую отрисовку панели, если что-то пойдёт не так.
+    // Ошибки самой проверки (например нет интернета) не показываем, чтобы
     // не мешать открытию панели.
-    checkAndAutoInstallUpdate()
+    import("../lib/utils/update")
+      .then(({ checkAndAutoInstallUpdate }) => checkAndAutoInstallUpdate())
       .then((res) => {
         if (res.installed) {
           alert(
@@ -136,6 +144,8 @@ export const App = () => {
           base={icon9x16}
           hover={icon9x16Hover}
           pressed={icon9x16Pressed}
+          label="9:16"
+          useIcons={useIcons}
           title="1080x1920&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline&#10;Alt+Клик — новая композиция"
           onClick={(e) => handleCropClick("9x16", e)}
         />
@@ -143,6 +153,8 @@ export const App = () => {
           base={icon4x3}
           hover={icon4x3Hover}
           pressed={icon4x3Pressed}
+          label="4:3"
+          useIcons={useIcons}
           title="1080x1350&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline&#10;Alt+Клик — новая композиция"
           onClick={(e) => handleCropClick("4x3", e)}
         />
@@ -150,6 +162,8 @@ export const App = () => {
           base={icon1x1}
           hover={icon1x1Hover}
           pressed={icon1x1Pressed}
+          label="1:1"
+          useIcons={useIcons}
           title="1080x1080&#10;Выделите комп 3:4 в Project"
           onClick={() => handleSpecialBuildClick("1x1")}
         />
@@ -157,6 +171,8 @@ export const App = () => {
           base={icon16x9}
           hover={icon16x9Hover}
           pressed={icon16x9Pressed}
+          label="16:9"
+          useIcons={useIcons}
           title="1920x1080&#10;Выделите комп 3:4 в Project"
           onClick={() => handleSpecialBuildClick("16x9")}
         />
@@ -164,6 +180,8 @@ export const App = () => {
           base={iconCtrl}
           hover={iconCtrlHover}
           pressed={iconCtrlPressed}
+          label="ctrl"
+          useIcons={useIcons}
           title="Клик — &quot;достает&quot; ключи через Essential Graphics&#10;Ctrl+Клик — &quot;достает&quot; Scale и Position"
           onClick={handleCtrlClick}
         />
@@ -172,10 +190,19 @@ export const App = () => {
           base={iconCollect}
           hover={iconCollectHover}
           pressed={iconCollectPressed}
+          label="collect"
+          useIcons={useIcons}
           title="Клик — чистка проекта&#10;Ctrl+Клик — чистка и сборка коллекта"
           onClick={handleCollectClick}
         />
-        <IconButton base={iconRender} hover={iconRenderHover} pressed={iconRenderPressed} onClick={handleRenderClick} />
+        <IconButton
+          base={iconRender}
+          hover={iconRenderHover}
+          pressed={iconRenderPressed}
+          label="render"
+          useIcons={useIcons}
+          onClick={handleRenderClick}
+        />
 
         {customLangMode ? (
           <input

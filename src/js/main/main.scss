@@ -34,6 +34,25 @@
   }
 }
 
+.rrr-std-btn {
+  width: 56px;
+  height: 32px;
+  padding: 0 4px;
+  border: 1px solid $dark;
+  background: $darker;
+  color: $font;
+  font-size: 11px;
+  cursor: pointer;
+  box-sizing: border-box;
+
+  &:hover {
+    background: $dark;
+  }
+  &:active {
+    background: $darkest;
+  }
+}
+
 .rrr-lang-select-wrap {
   position: relative;
   display: inline-flex;

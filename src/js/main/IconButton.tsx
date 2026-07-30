@@ -7,12 +7,24 @@ type IconButtonProps = {
   base: string;
   hover: string;
   pressed: string;
+  label: string;
+  useIcons: boolean;
   title?: string;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
-export const IconButton = ({ base, hover, pressed, title, onClick }: IconButtonProps) => {
+export const IconButton = ({ base, hover, pressed, label, useIcons, title, onClick }: IconButtonProps) => {
   const [src, setSrc] = useState(base);
+
+  // Тумблер в гайде: стандартная текстовая кнопка вместо PNG-иконки — как в
+  // старом ScriptUI-скрипте, если бы файл иконки не был найден.
+  if (!useIcons) {
+    return (
+      <button className="rrr-std-btn" title={title} onClick={onClick}>
+        {label}
+      </button>
+    );
+  }
 
   return (
     <button

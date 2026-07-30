@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { version } from "../../shared/shared";
-import { checkForUpdate, downloadAndInstallUpdate } from "../lib/utils/update";
+import { evalTS, openLinkInBrowser } from "../lib/utils/bolt";
 import "./guide.scss";
 
 // Содержимое гайда — аккордеон: заголовок с превью-«кнопками» + стрелочка, под ней текст.
@@ -70,14 +70,32 @@ const GUIDE_SECTIONS: GuideSection[] = [
   }
 ];
 
+const TUTORIAL_URL = "https://drive.google.com/drive/folders/1FvJb8II1V7HoEj5KQXLXc0fw8hdg3ybn?usp=drive_link";
+
 export const GuideApp = () => {
   const [openIndex, setOpenIndex] = useState(-1);
   const [updating, setUpdating] = useState(false);
+  const [useIcons, setUseIcons] = useState(true);
+
+  useEffect(() => {
+    evalTS("getIconModeSetting").then((saved) => setUseIcons(saved !== false));
+  }, []);
+
+  const handleToggleIcons = () => {
+    const next = !useIcons;
+    setUseIcons(next);
+    evalTS("setIconModeSetting", next);
+  };
 
   const handleUpdateClick = async () => {
     if (updating) return;
     setUpdating(true);
     try {
+      // Модуль обновления (использует Node.js fs/path) подключаем динамически,
+      // а не в самом верху файла — чтобы его загрузка не могла сломать
+      // самую первую отрисовку окна гайда, если что-то в этом окружении
+      // пойдёт не так.
+      const { checkForUpdate, downloadAndInstallUpdate } = await import("../lib/utils/update");
       const result = await checkForUpdate();
       if (!result.hasUpdate) {
         alert("У вас уже установлена последняя версия (" + version + ").");
@@ -137,6 +155,21 @@ export const GuideApp = () => {
       <button className="guide-update-btn" onClick={handleUpdateClick} disabled={updating}>
         {updating ? "Проверка..." : "Обновить"}
       </button>
+
+      <button className="guide-tutor-link" onClick={() => openLinkInBrowser(TUTORIAL_URL)}>
+        <span className="guide-tutor-icon" />
+        Tutor
+      </button>
+
+      <div className="guide-icon-toggle" title="Иконки кнопок / стандартные кнопки">
+        <span>Иконки</span>
+        <span
+          className={"guide-toggle-switch" + (useIcons ? " on" : "")}
+          onClick={handleToggleIcons}
+        >
+          <span className="guide-toggle-knob" />
+        </span>
+      </div>
     </div>
   );
 };
