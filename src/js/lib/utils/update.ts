@@ -63,7 +63,24 @@ export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<voi
 
   try {
     const zip = new AdmZip(tmpZipPath);
-    zip.extractAllTo(extensionDir, true);
+    // Файлы записываем сами (fs.writeFileSync), а не через zip.extractAllTo —
+    // та дополнительно делает chmod на каждый файл, а в защищённых папках вроде
+    // Program Files это падает с EPERM и обрывает распаковку на середине,
+    // оставляя расширение в наполовину обновлённом виде.
+    const failedEntries: string[] = [];
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue;
+      const targetPath = path.join(extensionDir, entry.entryName);
+      try {
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        fs.writeFileSync(targetPath, entry.getData());
+      } catch (e) {
+        failedEntries.push(entry.entryName);
+      }
+    }
+    if (failedEntries.length > 0) {
+      throw new Error("Не удалось обновить файлы: " + failedEntries.join(", "));
+    }
   } finally {
     try { fs.unlinkSync(tmpZipPath); } catch (_) {}
   }

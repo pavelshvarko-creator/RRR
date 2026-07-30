@@ -19,7 +19,11 @@ if (!fs.existsSync(distCep)) {
 fs.mkdirSync(releaseDir, { recursive: true });
 
 const zip = new AdmZip();
-zip.addLocalFolder(distCep);
+// .debug — CEP-файл для локальной отладки (включает debug-порт), в релиз
+// попадать не должен: у тестировщиков он лежит в защищённой папке Program
+// Files, и попытка перезаписать/chmod'нуть его при автообновлении падает
+// с EPERM, обрывая всю распаковку.
+zip.addLocalFolder(distCep, "", (entryPath) => entryPath !== ".debug");
 zip.writeZip(zipPath);
 
 console.log("Создан " + zipPath);
