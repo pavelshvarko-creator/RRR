@@ -161,9 +161,8 @@ export const GuideApp = () => {
         Скачать последнюю версию
       </button>
 
-      <button className="guide-tutor-link" onClick={() => openLinkInBrowser(TUTORIAL_URL)}>
+      <button className="guide-tutor-link" onClick={() => openLinkInBrowser(TUTORIAL_URL)} title="Tutor">
         <span className="guide-tutor-icon" />
-        Tutor
       </button>
 
       <div className="guide-icon-toggle" title="Иконки кнопок / стандартные кнопки">
