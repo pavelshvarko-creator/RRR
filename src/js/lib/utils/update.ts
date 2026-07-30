@@ -67,16 +67,28 @@ export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<voi
     // та дополнительно делает chmod на каждый файл, а в защищённых папках вроде
     // Program Files это падает с EPERM и обрывает распаковку на середине,
     // оставляя расширение в наполовину обновлённом виде.
+    //
+    // Некоторые файлы (например бандл уже открытого окна гайда) в момент
+    // обновления могут быть кратковременно заняты — Windows не даёт их
+    // перезаписать. Даём каждому файлу несколько попыток с паузой, прежде
+    // чем считать его действительно не обновившимся.
     const failedEntries: string[] = [];
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
       const targetPath = path.join(extensionDir, entry.entryName);
-      try {
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, entry.getData());
-      } catch (e) {
-        failedEntries.push(entry.entryName);
+      const content = entry.getData();
+
+      let written = false;
+      for (let attempt = 0; attempt < 5 && !written; attempt++) {
+        try {
+          fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+          fs.writeFileSync(targetPath, content);
+          written = true;
+        } catch (e) {
+          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+        }
       }
+      if (!written) failedEntries.push(entry.entryName);
     }
     if (failedEntries.length > 0) {
       throw new Error("Не удалось обновить файлы: " + failedEntries.join(", "));
