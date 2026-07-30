@@ -71,6 +71,7 @@ const GUIDE_SECTIONS: GuideSection[] = [
 ];
 
 const TUTORIAL_URL = "https://drive.google.com/drive/folders/1FvJb8II1V7HoEj5KQXLXc0fw8hdg3ybn?usp=drive_link";
+const LATEST_ZXP_URL = "https://github.com/pavelshvarko-creator/RRR/releases/latest/download/com.rrr.panel.zxp";
 
 export const GuideApp = () => {
   const [openIndex, setOpenIndex] = useState(-1);
@@ -154,6 +155,10 @@ export const GuideApp = () => {
       <div className="guide-version">{version}</div>
       <button className="guide-update-btn" onClick={handleUpdateClick} disabled={updating}>
         {updating ? "Проверка..." : "Обновить"}
+      </button>
+
+      <button className="guide-zxp-link" onClick={() => openLinkInBrowser(LATEST_ZXP_URL)}>
+        Скачать последнюю версию
       </button>
 
       <button className="guide-tutor-link" onClick={() => openLinkInBrowser(TUTORIAL_URL)}>
