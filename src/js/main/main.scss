@@ -39,17 +39,17 @@
   height: 32px;
   padding: 0 4px;
   border: 1px solid $dark;
-  background: $darker;
+  background: $panelBlack;
   color: $font;
   font-size: 11px;
   cursor: pointer;
   box-sizing: border-box;
 
   &:hover {
-    background: $dark;
+    background: $panelBlackHover;
   }
   &:active {
-    background: $darkest;
+    background: $panelBlackActive;
   }
 }
 
@@ -62,7 +62,7 @@
 .rrr-lang-select {
   width: auto;
   height: 32px;
-  background: $darkest;
+  background: $panelBlack;
   color: $font;
   border: 1px solid $dark;
   padding: 0 14px 0 6px;

@@ -2,6 +2,12 @@ $darkest: #222222;
 $darker: #333333;
 $dark: #444444;
 $font: #bbbbbb;
+
+// Чёрный фон для кнопок без иконок и дропдауна языков — как в старом
+// ScriptUI-скрипте (там это [0.05, 0.05, 0.05, 1]).
+$panelBlack: #0d0d0d;
+$panelBlackHover: #1a1a1a;
+$panelBlackActive: #000000;
 $highlight: #aaaaaa;
 
 $primary: #88715a;
