@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
+import { csi, subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
+import { ns } from "../../shared/shared";
 import { IconButton } from "./IconButton";
 import "./main.scss";
 
@@ -128,13 +129,14 @@ export const App = () => {
   };
 
   const handleInfoClick = () => {
-    // csi.requestOpenExtension умеет только переключить фокус на УЖЕ
-    // существующий экземпляр панели гайда, но не создать его с нуля — из-за
-    // этого кнопка "i" не работала, пока панель не была открыта вручную
-    // через Window > Extensions хотя бы раз. Вместо этого вызываем ту же
-    // нативную команду AE, что и сам пункт меню — она создаёт панель
-    // при необходимости и работает всегда, с первого раза.
-    evalTS("openGuidePanel");
+    // Возврат к rrr.requestOpenExtension — это единственный способ открытия,
+    // при котором гайд реально отрисовывался (проверено). Открытие через
+    // app.executeCommand (нативная команда меню) рендерит пустое окно —
+    // рабочая причина не найдена, но эмпирически он ломает рендер здесь.
+    // autoVisible: true у панели гайда (cep.config.ts) гарантирует, что
+    // экземпляр панели уже существует к моменту клика — так что "не может
+    // создать с нуля" ограничение requestOpenExtension больше не мешает.
+    csi.requestOpenExtension(`${ns}.guide`, "");
   };
 
   return (

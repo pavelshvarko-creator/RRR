@@ -44,7 +44,10 @@ const config: CEP_Config = {
       mainPath: "./guide/index.html",
       name: "guide",
       panelDisplayName: "RRR Guide",
-      autoVisible: false,
+      // true, а не false: гарантирует, что экземпляр панели гайда уже создан
+      // AE к моменту клика по кнопке "i" — иначе requestOpenExtension не
+      // может открыть его "с нуля" (см. handleInfoClick в main.tsx).
+      autoVisible: true,
       type: "Panel",
       width: 420,
       height: 600,
