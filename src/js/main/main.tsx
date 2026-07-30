@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { csi, subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
-import { ns } from "../../shared/shared";
+import { subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
 import { IconButton } from "./IconButton";
 import "./main.scss";
 
@@ -129,14 +128,13 @@ export const App = () => {
   };
 
   const handleInfoClick = () => {
-    // Самый первый вызов requestOpenExtension за сессию AE (пока окно гайда
-    // ни разу не открывалось) иногда "холодно стартует" и не показывает
-    // окно с первого раза — повторный вызов чуть позже уже отрабатывает
-    // надёжно. Поэтому дублируем вызов с небольшой задержкой "на всякий
-    // случай": если окно уже открылось с первого раза, повторный вызов
-    // просто ничего не меняет (окно уже видно).
-    csi.requestOpenExtension(`${ns}.guide`, "");
-    setTimeout(() => csi.requestOpenExtension(`${ns}.guide`, ""), 400);
+    // csi.requestOpenExtension умеет только переключить фокус на УЖЕ
+    // существующий экземпляр панели гайда, но не создать его с нуля — из-за
+    // этого кнопка "i" не работала, пока панель не была открыта вручную
+    // через Window > Extensions хотя бы раз. Вместо этого вызываем ту же
+    // нативную команду AE, что и сам пункт меню — она создаёт панель
+    // при необходимости и работает всегда, с первого раза.
+    evalTS("openGuidePanel");
   };
 
   return (

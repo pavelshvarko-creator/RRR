@@ -274,6 +274,24 @@ export function setIconModeSetting(useIcons: boolean) {
   app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_ICON_MODE, useIcons ? "1" : "0");
 }
 
+// Открывает панель гайда через ту же нативную команду, что и пункт меню
+// Window > Extensions > RRR Guide — а не через CSInterface.requestOpenExtension.
+// Для панелей типа "Panel" (в отличие от "Modeless") requestOpenExtension умеет
+// только переключить фокус на УЖЕ существующий экземпляр, но не создать его
+// с нуля — поэтому кнопка "i" не работала, пока панель гайда не была открыта
+// вручную хотя бы раз. app.executeCommand — это буквально то же самое
+// действие, что выполняет сам пункт меню, поэтому работает всегда.
+export function openGuidePanel(): boolean {
+  var cmdId = app.findMenuCommandId("RRR Guide");
+  if (!cmdId) return false;
+  try {
+    app.executeCommand(cmdId);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // При каждом новом запуске язык всегда начинается с EN. Name запоминается между запусками.
 export function getSavedCreatorName(): string {
   if (app.settings.haveSetting(SETTINGS_SECTION, SETTINGS_KEY_CREATOR)) {
