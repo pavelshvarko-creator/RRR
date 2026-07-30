@@ -1,10 +1,12 @@
 // ====================== СОРТИРОВКА ПРОЕКТА ДЛЯ COLLECT ======================
-// Создаёт иерархию Assets/{Audios,Comps,Images,layers,Videos} + <EN>/<WxH>
-// и раскладывает элементы. Родительские (выделенные) композиции -> <EN>/<WxH> по разрешению.
+// Создаёт иерархию Assets/{Audios,Comps,Images,layers,Videos} + <LANG>/<WxH>
+// и раскладывает элементы. Родительские (выделенные) композиции -> <LANG>/<WxH>
+// по разрешению, где LANG — язык КАЖДОЙ композиции по отдельности (из
+// selectedCompLangs) — так при выделении сразу нескольких языковых папок
+// иерархия по языкам сохраняется, а не схлопывается в одну общую папку.
 function organizeProjectForCollect(
   proj: Project,
-  selectedCompIDs: { [id: number]: boolean },
-  enName: string
+  selectedCompLangs: { [id: number]: string }
 ) {
   function addFolder(name: string, parent?: FolderItem) {
     var fld = proj.items.addFolder(name);
@@ -44,18 +46,21 @@ function organizeProjectForCollect(
   var fLayers = addFolder("layers", assets);
   var fVideos = addFolder("Videos", assets);
 
-  if (!enName) enName = "EN";
-  var enFolder = addFolder(enName, proj.rootFolder);
+  var langFolders: { [lang: string]: FolderItem } = {};
+  function getLangFolder(lang: string) {
+    if (!langFolders[lang]) langFolders[lang] = addFolder(lang, proj.rootFolder);
+    return langFolders[lang];
+  }
 
   var resFolders: { [key: string]: FolderItem } = {};
-  function getResFolder(w: number, h: number) {
-    var key = w + "x" + h;
-    if (!resFolders[key]) resFolders[key] = addFolder(key, enFolder);
+  function getResFolder(lang: string, w: number, h: number) {
+    var key = lang + "|" + w + "x" + h;
+    if (!resFolders[key]) resFolders[key] = addFolder(w + "x" + h, getLangFolder(lang));
     return resFolders[key];
   }
 
   var protectedIDs: { [id: number]: boolean } = {};
-  var prot = [assets, fAudios, fComps, fImages, fLayers, fVideos, enFolder];
+  var prot = [assets, fAudios, fComps, fImages, fLayers, fVideos];
   for (var pi = 0; pi < prot.length; pi++) protectedIDs[prot[pi].id] = true;
 
   var snapshot = [];
@@ -67,7 +72,8 @@ function organizeProjectForCollect(
     if (it instanceof FolderItem) continue;
 
     if (it instanceof CompItem) {
-      if (selectedCompIDs[it.id]) it.parentFolder = getResFolder(it.width, it.height);
+      var compLang = selectedCompLangs[it.id];
+      if (compLang) it.parentFolder = getResFolder(compLang, it.width, it.height);
       else it.parentFolder = fComps;
       continue;
     }
@@ -330,15 +336,37 @@ function buildTimelineName(oldName: string, w: number, h: number) {
 // Определяет язык из иерархии папок: ближайшая (на любой глубине вверх от
 // композиции) папка с именем — двубуквенным кодом языка (EN/ES/...). Если
 // такой папки нет (композиция в корне или во вложенных не-языковых папках) —
-// язык по умолчанию EN.
-function getLanguageFromFolderHierarchy(folder: FolderItem | null): string {
+// используется defaultLang (по умолчанию EN).
+function getLanguageFromFolderHierarchy(folder: FolderItem | null, defaultLang?: string): string {
   var current = folder;
   while (current && current !== app.project.rootFolder) {
     var code = current.name.toUpperCase();
     if (code.length === 2 && LANGUAGES.hasOwnProperty(code)) return code;
     current = current.parentFolder;
   }
-  return "EN";
+  return defaultLang || "EN";
+}
+
+// Находит папку с именем name внутри parent или создаёт её, если такой ещё нет.
+function getOrCreateFolder(name: string, parent: FolderItem): FolderItem {
+  var proj = app.project;
+  for (var i = 1; i <= proj.numItems; i++) {
+    var item = proj.item(i);
+    if (item instanceof FolderItem && item.parentFolder === parent && item.name === name) {
+      return item;
+    }
+  }
+  var fld = proj.items.addFolder(name);
+  fld.parentFolder = parent;
+  return fld;
+}
+
+// Находит (или создаёт, если ещё нет) иерархию <lang>/<WxH> в корне проекта —
+// та же структура, что и organizeProjectForCollect использует при сборе.
+function getOrCreateResolutionFolder(lang: string, w: number, h: number): FolderItem {
+  var proj = app.project;
+  var langFolder = getOrCreateFolder(lang, proj.rootFolder);
+  return getOrCreateFolder(w + "x" + h, langFolder);
 }
 
 // Собирает граф композиции: сама композиция + все вложенные precomp'ы,
@@ -401,20 +429,41 @@ function duplicateCompVersionGraph(sourceComp: CompItem, newVersion: number, lan
 // либо переименовываем композицию по формуле V?__WxH_LANG (если имя ещё не
 // соответствует формуле), либо, если оно уже соответствует, создаём
 // независимый дубликат всего графа со следующим номером версии.
-function renameOrVersionComp(sourceComp: CompItem, key: string) {
+// Без своей undo-группы — её открывают вызывающие обёртки (одиночная/массовая).
+function renameOrVersionCompCore(sourceComp: CompItem, key: string) {
   var target = RESOLUTIONS[key];
   var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
   var expectedName = buildProjectName(getVersionFromName(sourceComp.name), target.w, target.h) + "_" + lang;
 
+  if (sourceComp.name === expectedName) {
+    var newVersion = parseInt(getVersionFromName(sourceComp.name), 10) + 1;
+    var dupRoot = duplicateCompVersionGraph(sourceComp, newVersion, lang, target.w, target.h);
+    dupRoot.openInViewer();
+  } else {
+    sourceComp.name = expectedName;
+    sourceComp.openInViewer();
+  }
+}
+
+// Одиночная композиция — своя undo-группа.
+function renameOrVersionComp(sourceComp: CompItem, key: string) {
   app.beginUndoGroup("Rename/Version " + key);
   try {
-    if (sourceComp.name === expectedName) {
-      var newVersion = parseInt(getVersionFromName(sourceComp.name), 10) + 1;
-      var dupRoot = duplicateCompVersionGraph(sourceComp, newVersion, lang, target.w, target.h);
-      dupRoot.openInViewer();
-    } else {
-      sourceComp.name = expectedName;
-      sourceComp.openInViewer();
+    renameOrVersionCompCore(sourceComp, key);
+  } finally {
+    app.endUndoGroup();
+  }
+}
+
+// Массовое переименование/версия: несколько выделенных композиций одного
+// разрешения обрабатываются каждая по своим собственным версии/языку (из
+// собственной иерархии папок), но всё — в ОДНОЙ undo-группе, чтобы один
+// Ctrl+Z отменял всю пачку целиком.
+function renameOrVersionComps(comps: CompItem[], key: string) {
+  app.beginUndoGroup("Rename/Version " + key + " (Batch)");
+  try {
+    for (var i = 0; i < comps.length; i++) {
+      renameOrVersionCompCore(comps[i], key);
     }
   } finally {
     app.endUndoGroup();
@@ -459,22 +508,33 @@ function processCropResolutionProject(key: string) {
   var target = RESOLUTIONS[key];
   var proj = app.project;
 
+  // Среди выделения отдельно собираем ВСЕ композиции, чьё разрешение уже
+  // совпадает с целевым (для массового переименования/версии), и отдельно
+  // запоминаем первую композицию другого разрешения (для обычного кропа).
   var selection = proj.selection;
+  var matchingComps: CompItem[] = [];
   var sourceComp: CompItem | null = null;
   for (var i = 0; i < selection.length; i++) {
-    if (selection[i] instanceof CompItem) { sourceComp = selection[i] as CompItem; break; }
+    if (selection[i] instanceof CompItem) {
+      var selComp = selection[i] as CompItem;
+      if (selComp.width === target.w && selComp.height === target.h) {
+        matchingComps.push(selComp);
+      } else if (!sourceComp) {
+        sourceComp = selComp;
+      }
+    }
+  }
+
+  // Разрешение выделенной(ых) композиции(й) уже совпадает с целевым — вместо
+  // кропа переименовываем по формуле V?__WxH_LANG или создаём новую версию
+  // (см. renameOrVersionComp/renameOrVersionComps) для каждой из них.
+  if (matchingComps.length > 0) {
+    renameOrVersionComps(matchingComps, key);
+    return;
   }
 
   if (!sourceComp) {
     alert("Выделите композицию в панели Project!");
-    return;
-  }
-
-  // Разрешение выделенной композиции уже совпадает с целевым — вместо кропа
-  // переименовываем по формуле V?__WxH_LANG или создаём новую версию (см.
-  // renameOrVersionComp).
-  if (sourceComp.width === target.w && sourceComp.height === target.h) {
-    renameOrVersionComp(sourceComp, key);
     return;
   }
 
@@ -546,21 +606,29 @@ function processSpecialBuild(targetKey: string) {
   var target = RESOLUTIONS[targetKey];
   var label = SPECIAL_BUILD_LABELS[targetKey] || targetKey;
 
-  // Приоритет 1: явное выделение в Project-панели.
+  // Приоритет 1: явное выделение в Project-панели. Отдельно собираем ВСЕ
+  // композиции, чьё разрешение уже совпадает с целевым (для массового
+  // переименования/версии), и отдельно первую композицию 1080x1350 (для билда).
   var selection = proj.selection;
+  var matchingComps: CompItem[] = [];
   var sourceComp: CompItem | null = null;
   for (var i = 0; i < selection.length; i++) {
-    if (selection[i] instanceof CompItem) { sourceComp = selection[i] as CompItem; break; }
+    if (selection[i] instanceof CompItem) {
+      var selComp = selection[i] as CompItem;
+      if (selComp.width === target.w && selComp.height === target.h) {
+        matchingComps.push(selComp);
+      } else if (!sourceComp) {
+        sourceComp = selComp;
+      }
+    }
+  }
+
+  if (matchingComps.length > 0) {
+    renameOrVersionComps(matchingComps, targetKey);
+    return;
   }
 
   if (sourceComp) {
-    // Разрешение выделенной композиции уже совпадает с целевым — вместо билда
-    // переименовываем по формуле V?__WxH_LANG или создаём новую версию (см.
-    // renameOrVersionComp).
-    if (sourceComp.width === target.w && sourceComp.height === target.h) {
-      renameOrVersionComp(sourceComp, targetKey);
-      return;
-    }
     if (!(sourceComp.width === 1080 && sourceComp.height === 1350)) {
       alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выделите композицию с этим разрешением.");
       return;
@@ -613,6 +681,7 @@ function createSafeZoneGuideComp() {
   var lineThickness = 4;
 
   var comp = proj.items.addComp("V1__1080x1920_EN", compW, compH, 1, durationSec, frameRate);
+  comp.parentFolder = getOrCreateResolutionFolder("EN", compW, compH);
 
   var shapeLayer = comp.layers.addShape();
   shapeLayer.name = "Safe Zone Guide";
@@ -662,6 +731,7 @@ function createEmpty4x3Comp() {
   var name = buildProjectName("1", target.w, target.h) + "_EN";
 
   var comp = proj.items.addComp(name, target.w, target.h, 1, durationSec, frameRate);
+  comp.parentFolder = getOrCreateResolutionFolder("EN", target.w, target.h);
   comp.openInViewer();
   return comp;
 }
@@ -989,11 +1059,24 @@ export function renderButtonClick(lang: string, creatorName: string) {
   try {
     var projectName = proj.file ? proj.file.name.replace(/\.[^\.]+$/, "") : "Untitled_Project";
     var desktopPath = Folder.desktop.fsName;
-    var baseFolder = new Folder(desktopPath + "/" + projectName);
-    if (!baseFolder.exists) baseFolder.create();
     var defaultLang = lang;
     var creator = creatorName;
     saveLangCreatorSettings(lang, creatorName);
+
+    // Своя корневая папка на рабочем столе на каждый язык — имя проекта +
+    // суффикс языка (например "07.26_CB_123_FR"). Для EN (язык по умолчанию)
+    // суффикс не добавляется — папка называется просто именем проекта.
+    var langBaseFolders: { [langKey: string]: Folder } = {};
+    function getLangBaseFolder(langCode: string): Folder {
+      if (!langBaseFolders[langCode]) {
+        var folderName = langCode === "EN" ? projectName : projectName + "_" + langCode;
+        var folder = new Folder(desktopPath + "/" + folderName);
+        if (!folder.exists) folder.create();
+        langBaseFolders[langCode] = folder;
+      }
+      return langBaseFolders[langCode];
+    }
+
     for (var i = 0; i < compsToRender.length; i++) {
       var comp = compsToRender[i];
       // Язык в имени файла — из суффикса самой композиции (например "_EN"),
@@ -1005,7 +1088,8 @@ export function renderButtonClick(lang: string, creatorName: string) {
       var versionMatch = comp.name.match(/[Vv]\d+/);
       var version = versionMatch ? ("V" + versionMatch[0].replace(/[Vv]/, "")) : "V1";
       var resolutionFolderName = width + "x" + height;
-      var resFolder = new Folder(baseFolder.fsName + "/" + resolutionFolderName);
+      var langBaseFolder = getLangBaseFolder(langCode);
+      var resFolder = new Folder(langBaseFolder.fsName + "/" + resolutionFolderName);
       if (!resFolder.exists) resFolder.create();
       var safeFileName = projectName + "_video_" + version + "__" + resolutionFolderName + "_" + durationSec + "s_" + langCode + "_" + creator;
       var outputPath = resFolder.fsName + "/" + safeFileName + ".mov";
@@ -1022,7 +1106,7 @@ export function renderButtonClick(lang: string, creatorName: string) {
   }
 }
 
-export function collectButtonClick(lang: string) {
+export function collectButtonClick(lang: string, ctrlKey: boolean) {
   var proj = app.project;
   if (!proj) { alert("Нет открытого проекта."); return; }
 
@@ -1030,24 +1114,25 @@ export function collectButtonClick(lang: string) {
   var selectedComps = getCompsFromSelection(selection);
   if (selectedComps.length === 0) { alert("Выделите хотя бы одну композицию или папку с композициями."); return; }
 
-  // Суффикс языка для этого прогона Collect — берём из того же дропдауна,
-  // что задаёт папку EN/ES/... в organizeProjectForCollect ниже. Базовый (EN)
-  // набор обычно НЕ лежит в папке с языковым именем до Collect (в отличие от
-  // ES/FR и т.п., созданных через дублирование) — поэтому суффикс определяется
-  // явно выбранным языком, а не поиском по иерархии папок.
-  var collectLangSuffix = lang;
-
-  // ID выделенных композиций (id стабилен при переименовании / reduce)
-  var selectedCompIDs: { [id: number]: boolean } = {};
-  for (var s = 0; s < selectedComps.length; s++) selectedCompIDs[selectedComps[s].id] = true;
+  // Язык каждой выделенной композиции определяем по ЕЁ СОБСТВЕННОЙ иерархии
+  // папок (EN/ES/... на любой глубине) — считаем это ДО расплющивания папок
+  // ниже, пока parentFolder ещё указывает на исходное место. Так при выделении
+  // сразу нескольких языковых папок Collect сохраняет разделение между языками,
+  // а не смешивает всё в одну. Выбранный в дропдауне язык — только запасной
+  // вариант для композиций вне языковых папок.
+  var compLangs: { [id: number]: string } = {};
+  for (var li = 0; li < selectedComps.length; li++) {
+    var lc = selectedComps[li];
+    compLangs[lc.id] = getLanguageFromFolderHierarchy(lc.parentFolder, lang);
+  }
 
   app.beginUndoGroup("Rename + Organize + Reduce");
   try {
     // 1) Переименование выделенных композиций: V?__WxH (фактическое разрешение)
-    //    + суффикс языка (_EN и т.п.) из дропдауна — одинаково для всех языков
+    //    + суффикс языка — свой для каждой композиции (см. compLangs выше)
     for (var r = 0; r < selectedComps.length; r++) {
       var c = selectedComps[r];
-      c.name = buildProjectName(getVersionFromName(c.name), c.width, c.height) + "_" + collectLangSuffix;
+      c.name = buildProjectName(getVersionFromName(c.name), c.width, c.height) + "_" + compLangs[c.id];
     }
 
     // 2) Удаление всех папок: сначала всё содержимое в корень, затем удаляем пустые папки
@@ -1066,14 +1151,19 @@ export function collectButtonClick(lang: string) {
     // 4) Reduce Project по выделенным композициям
     proj.reduceProject(selectedComps);
 
-    // 5) Создание иерархии папок и сортировка
-    organizeProjectForCollect(proj, selectedCompIDs, collectLangSuffix);
+    // 5) Создание иерархии папок и сортировка — каждая композиция в свою <LANG>/<WxH>
+    organizeProjectForCollect(proj, compLangs);
   } catch (e: any) {
     alert("Error: " + e.toString());
     app.endUndoGroup();
     return;
   }
   app.endUndoGroup();
+
+  // Обычный клик — только чистка проекта (переименование, сортировка по
+  // папкам, consolidate, reduce), без шага 6. Ctrl+Click — то же самое,
+  // плюс шаг 6 (нативный Collect Files).
+  if (!ctrlKey) return;
 
   // 6) Сам сбор файлов — через РОДНУЮ команду AE "Collect Files", а не своим кодом.
   // У скриптового API нет способа переподключить многослойный PSD/AI с сохранением

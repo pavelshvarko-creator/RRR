@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { version } from "../../shared/shared";
+import { checkForUpdate, downloadAndInstallUpdate } from "../lib/utils/update";
 import "./guide.scss";
 
 // Содержимое гайда — аккордеон: заголовок с превью-«кнопками» + стрелочка, под ней текст.
@@ -11,7 +12,6 @@ import "./guide.scss";
 type GuideSection = {
   previewLabels?: string[];
   previewDropdown?: boolean;
-  previewInput?: boolean;
   title: string;
   bullets: string[];
 };
@@ -42,18 +42,14 @@ const GUIDE_SECTIONS: GuideSection[] = [
     ]
   },
   {
-    previewDropdown: true,
-    title: "дубликат папки",
+    previewLabels: ["collect"],
+    title: "сборка и/или наведение порядка одной кнопкой",
     bullets: [
-      "Выберите папку в панели project и создайте независимый дубликат для локализации."
-    ]
-  },
-  {
-    previewInput: true,
-    title: "поле имени",
-    bullets: [
-      "Name — ваш ник.",
-      "Запоминается между запусками."
+      "Переименовывает выбранные композиции,",
+      "удаляет лишние папки и файлы,",
+      "объединяет одинаковые файлы,",
+      "создает нужные папки и сортирует все по ним.",
+      "+ctrl запускает коллект"
     ]
   },
   {
@@ -61,23 +57,47 @@ const GUIDE_SECTIONS: GuideSection[] = [
     title: "отправка в очередь",
     bullets: [
       "проект должен быть назван по формуле MM.YY_AA_TaskName,",
+      "выберите композиции/папки для рендера",
       "создает все нужные папки на рабочем столе и отправляет на Render."
     ]
   },
   {
-    previewLabels: ["collect"],
-    title: "сборка и наведение порядка одной кнопкой",
+    previewDropdown: true,
+    title: "дубликат папки",
     bullets: [
-      "Переименовывает выбранные композиции,",
-      "удаляет лишние папки и файлы,",
-      "объединяет одинаковые файлы,",
-      "создает нужные папки и сортирует все по ним."
+      "Выберите папку в панели project и создайте независимый дубликат для локализации."
     ]
   }
 ];
 
 export const GuideApp = () => {
   const [openIndex, setOpenIndex] = useState(-1);
+  const [updating, setUpdating] = useState(false);
+
+  const handleUpdateClick = async () => {
+    if (updating) return;
+    setUpdating(true);
+    try {
+      const result = await checkForUpdate();
+      if (!result.hasUpdate) {
+        alert("У вас уже установлена последняя версия (" + version + ").");
+        return;
+      }
+      if (!result.downloadUrl) {
+        alert("Найдена версия " + result.latestVersion + ", но в релизе нет .zip-файла для установки.");
+        return;
+      }
+      await downloadAndInstallUpdate(result.downloadUrl);
+      alert(
+        "✅ Обновление до версии " + result.latestVersion + " установлено.\n" +
+        "Перезапустите After Effects, чтобы изменения вступили в силу."
+      );
+    } catch (e: any) {
+      alert("Ошибка обновления: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   return (
     <div className="guide-window">
@@ -96,13 +116,10 @@ export const GuideApp = () => {
                   <span className="guide-preview-box" key={i}>{label}</span>
                 ))}
               {section.previewDropdown && (
-                <>
-                  <span className="guide-preview-lang">EN</span>
-                  <span className="guide-preview-box guide-preview-chevron">⌄</span>
-                </>
-              )}
-              {section.previewInput && (
-                <span className="guide-preview-box">Name</span>
+                <span className="guide-preview-box guide-preview-dropdown">
+                  <span>EN</span>
+                  <span className="guide-preview-chevron" />
+                </span>
               )}
               <span className="guide-title">{section.title}</span>
             </div>
@@ -116,8 +133,10 @@ export const GuideApp = () => {
           </div>
         );
       })}
-      <div className="guide-version">версия плагина: {version}</div>
-      <button className="guide-update-btn">Обновить</button>
+      <div className="guide-version">{version}</div>
+      <button className="guide-update-btn" onClick={handleUpdateClick} disabled={updating}>
+        {updating ? "Проверка..." : "Обновить"}
+      </button>
     </div>
   );
 };

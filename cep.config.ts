@@ -61,7 +61,7 @@ const config: CEP_Config = {
     sourceMap: false,
     jsxBin: "off",
   },
-  installModules: [],
+  installModules: ["adm-zip"],
   copyAssets: [],
   copyZipAssets: [],
 };

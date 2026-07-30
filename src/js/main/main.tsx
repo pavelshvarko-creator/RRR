@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { csi, subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
 import { ns } from "../../shared/shared";
 import { IconButton } from "./IconButton";
+import { checkAndAutoInstallUpdate } from "../lib/utils/update";
 import "./main.scss";
 
 import icon9x16 from "../assets/RRR/9x16.png";
@@ -39,9 +40,36 @@ export const App = () => {
     if (window.cep) {
       subscribeBackgroundColor(setBgColor);
     }
+    // Поле Name в интерфейсе не показываем — имя один раз запрашивается при
+    // первом запуске панели (если ещё не сохранено) и дальше используется
+    // молча из app.settings. Возможности изменить его позже нет.
     evalTS("getSavedCreatorName").then((saved) => {
-      if (saved) setName(saved);
+      if (saved) {
+        setName(saved);
+        return;
+      }
+      var entered = window.prompt("Введите ваше имя (для имени файлов рендера):");
+      if (entered) {
+        setName(entered);
+        evalTS("saveCreatorName", entered, lang);
+      }
     });
+
+    // Тихая автопроверка обновлений при каждом запуске панели (AE запущен/
+    // перезапущен). Если есть новая версия — скачивается и ставится сама;
+    // ошибки самой проверки (например нет интернета) не показываем, чтобы
+    // не мешать открытию панели.
+    checkAndAutoInstallUpdate()
+      .then((res) => {
+        if (res.installed) {
+          alert(
+            "✅ Установлено обновление до версии " + res.version + ".\n" +
+            "Перезапустите After Effects, чтобы изменения вступили в силу."
+          );
+        }
+      })
+      .catch((e) => console.error("Автообновление: проверка не удалась", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCropClick = (key: string, e: React.MouseEvent) => {
@@ -60,8 +88,8 @@ export const App = () => {
     evalTS("renderButtonClick", lang, name);
   };
 
-  const handleCollectClick = () => {
-    evalTS("collectButtonClick", lang);
+  const handleCollectClick = (e: React.MouseEvent) => {
+    evalTS("collectButtonClick", lang, e.ctrlKey);
   };
 
   const handleLangChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -103,36 +131,46 @@ export const App = () => {
           base={icon9x16}
           hover={icon9x16Hover}
           pressed={icon9x16Pressed}
-          title="1080x1920&#10;&#10;Click - resize in project&#10;Ctrl+Click - resize in timeline&#10;Alt+Click - create Safe Zone guide comp"
+          title="1080x1920&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline&#10;Alt+Клик — новая композиция"
           onClick={(e) => handleCropClick("9x16", e)}
         />
         <IconButton
           base={icon4x3}
           hover={icon4x3Hover}
           pressed={icon4x3Pressed}
-          title="1080x1350&#10;&#10;Click - resize in project&#10;Ctrl+Click - resize in timeline&#10;Alt+Click - create empty 1080x1350 comp"
+          title="1080x1350&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline&#10;Alt+Клик — новая композиция"
           onClick={(e) => handleCropClick("4x3", e)}
         />
         <IconButton
           base={icon1x1}
           hover={icon1x1Hover}
           pressed={icon1x1Pressed}
-          title="1080x1080&#10;Works only with 1080x1350 (4:3) source — blurred-background build, same as 16:9"
+          title="1080x1080&#10;Выделите комп 3:4 в Project"
           onClick={() => handleSpecialBuildClick("1x1")}
         />
         <IconButton
           base={icon16x9}
           hover={icon16x9Hover}
           pressed={icon16x9Pressed}
+          title="1920x1080&#10;Выделите комп 3:4 в Project"
           onClick={() => handleSpecialBuildClick("16x9")}
         />
         <IconButton
           base={iconCtrl}
           hover={iconCtrlHover}
           pressed={iconCtrlPressed}
-          title="Click - Export Keyframed Parameters to Essential Graphics&#10;Ctrl+Click - Precomp Controllers"
+          title="Клик — &quot;достает&quot; ключи через Essential Graphics&#10;Ctrl+Клик — &quot;достает&quot; Scale и Position"
           onClick={handleCtrlClick}
         />
+
+        <IconButton
+          base={iconCollect}
+          hover={iconCollectHover}
+          pressed={iconCollectPressed}
+          title="Клик — чистка проекта&#10;Ctrl+Клик — чистка и сборка коллекта"
+          onClick={handleCollectClick}
+        />
+        <IconButton base={iconRender} hover={iconRenderHover} pressed={iconRenderPressed} onClick={handleRenderClick} />
 
         {customLangMode ? (
           <input
@@ -148,25 +186,17 @@ export const App = () => {
             }}
           />
         ) : (
-          <select className="rrr-lang-select" value={lang} onChange={handleLangChange} title={lang}>
-            {LANG_CODES.map((code) => (
-              <option key={code} value={code}>{code}</option>
-            ))}
-            {LANG_CODES.indexOf(lang) === -1 && <option value={lang}>{lang}</option>}
-            <option value="CUSTOM">other</option>
-          </select>
+          <span className="rrr-lang-select-wrap">
+            <select className="rrr-lang-select" value={lang} onChange={handleLangChange} title="Выделите папку в Project">
+              {LANG_CODES.map((code) => (
+                <option key={code} value={code}>{code}</option>
+              ))}
+              {LANG_CODES.indexOf(lang) === -1 && <option value={lang}>{lang}</option>}
+              <option value="CUSTOM">other</option>
+            </select>
+            <span className="rrr-lang-select-arrow" />
+          </span>
         )}
-
-        <input
-          className="rrr-name-input"
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => evalTS("saveCreatorName", name, lang)}
-        />
-
-        <IconButton base={iconCollect} hover={iconCollectHover} pressed={iconCollectPressed} onClick={handleCollectClick} />
-        <IconButton base={iconRender} hover={iconRenderHover} pressed={iconRenderPressed} onClick={handleRenderClick} />
 
         <button className="rrr-info-btn" title="info" onClick={handleInfoClick}>
           i
