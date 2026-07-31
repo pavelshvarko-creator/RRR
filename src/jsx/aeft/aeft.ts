@@ -586,10 +586,13 @@ function processCropResolutionProject(key: string) {
   }
 
   var version = getVersionFromName(sourceComp.name);
+  var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
   app.beginUndoGroup("Resize " + key);
   unlockAllLayers(sourceComp);
   var newComp2 = cropResizeComp(sourceComp, target.h);
-  newComp2.name = buildProjectName(version, target.w, target.h);
+  newComp2.name = buildProjectName(version, target.w, target.h) + "_" + lang;
+  newComp2.parentFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
+  applyVersionLabel(newComp2);
   newComp2.openInViewer();
   app.endUndoGroup();
 }
@@ -683,10 +686,13 @@ function processSpecialBuildProject(targetKey: string) {
     return;
   }
   var version = getVersionFromName(sourceComp.name);
+  var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
   app.beginUndoGroup("Special Build " + label);
   unlockAllLayers(sourceComp);
-  var newName2 = buildProjectName(version, target.w, target.h);
+  var newName2 = buildProjectName(version, target.w, target.h) + "_" + lang;
   var newComp2 = buildSpecialBuildComp(sourceComp, newName2, targetKey);
+  newComp2.parentFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
+  applyVersionLabel(newComp2);
   newComp2.openInViewer();
   app.endUndoGroup();
 }
