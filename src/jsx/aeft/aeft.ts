@@ -341,6 +341,32 @@ function getVersionFromName(name: string) {
   return m ? m[1] : "1";
 }
 
+// Цвет-лейбл композиции по номеру версии в имени: V1 = Label 1, V2 = Label 2,
+// ... V16 = Label 16, дальше цикл заново (V17 = Label 1 и т.д.) — в AE ровно
+// 16 цветов-лейблов. Применяется при переименовании (кнопки ресайза), при
+// Collect и при Render — везде, где в имени есть "V?".
+function applyVersionLabel(comp: CompItem) {
+  var v = parseInt(getVersionFromName(comp.name), 10);
+  if (isNaN(v) || v < 1) return;
+  comp.label = ((v - 1) % 16) + 1;
+}
+
+// Сканирует ПРЯМЫХ соседей (parentFolder) на такое же разрешение и находит
+// максимальный номер версии среди них — новый дубликат получает следующий
+// номер относительно того, что уже есть в папке, а не относительно версии
+// самой выделенной (дублируемой) композиции.
+function getNextVersionInFolder(folder: FolderItem | null, w: number, h: number): number {
+  var maxVersion = 0;
+  for (var i = 1; i <= app.project.numItems; i++) {
+    var it = app.project.item(i);
+    if (it instanceof CompItem && it.parentFolder === folder && it.width === w && it.height === h) {
+      var v = parseInt(getVersionFromName(it.name), 10);
+      if (!isNaN(v) && v > maxVersion) maxVersion = v;
+    }
+  }
+  return maxVersion + 1;
+}
+
 function buildProjectName(version: string, w: number, h: number) {
   return "V" + version + "__" + w + "x" + h;
 }
@@ -450,13 +476,18 @@ function renameOrVersionCompCore(sourceComp: CompItem, key: string) {
   var target = RESOLUTIONS[key];
   var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
   var expectedName = buildProjectName(getVersionFromName(sourceComp.name), target.w, target.h) + "_" + lang;
+  var destFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
 
   if (sourceComp.name === expectedName) {
-    var newVersion = parseInt(getVersionFromName(sourceComp.name), 10) + 1;
+    var newVersion = getNextVersionInFolder(sourceComp.parentFolder, target.w, target.h);
     var dupRoot = duplicateCompVersionGraph(sourceComp, newVersion, lang, target.w, target.h);
+    dupRoot.parentFolder = destFolder;
+    applyVersionLabel(dupRoot);
     dupRoot.openInViewer();
   } else {
     sourceComp.name = expectedName;
+    sourceComp.parentFolder = destFolder;
+    applyVersionLabel(sourceComp);
     sourceComp.openInViewer();
   }
 }
@@ -617,14 +648,13 @@ function buildSpecialBuildComp(sourceComp: CompItem, newName: string, targetKey:
 
 var SPECIAL_BUILD_LABELS: { [k: string]: string } = { "16x9": "16:9", "1x1": "1:1" };
 
-function processSpecialBuild(targetKey: string) {
+// Клик (без модификаторов) на 1:1 / 16:9: работаем ТОЛЬКО с выделением
+// в панели Project — билдим блюр-фон композицию из исходника 1080x1350.
+function processSpecialBuildProject(targetKey: string) {
   var proj = app.project;
   var target = RESOLUTIONS[targetKey];
   var label = SPECIAL_BUILD_LABELS[targetKey] || targetKey;
 
-  // Приоритет 1: явное выделение в Project-панели. Отдельно собираем ВСЕ
-  // композиции, чьё разрешение уже совпадает с целевым (для массового
-  // переименования/версии), и отдельно первую композицию 1080x1350 (для билда).
   var selection = proj.selection;
   var matchingComps: CompItem[] = [];
   var sourceComp: CompItem | null = null;
@@ -644,46 +674,53 @@ function processSpecialBuild(targetKey: string) {
     return;
   }
 
-  if (sourceComp) {
-    if (!(sourceComp.width === 1080 && sourceComp.height === 1350)) {
-      alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выделите композицию с этим разрешением.");
-      return;
-    }
-    var version = getVersionFromName(sourceComp.name);
-    app.beginUndoGroup("Special Build " + label);
-    unlockAllLayers(sourceComp);
-    var newName2 = buildProjectName(version, target.w, target.h);
-    var newComp2 = buildSpecialBuildComp(sourceComp, newName2, targetKey);
-    newComp2.openInViewer();
-    app.endUndoGroup();
+  if (!sourceComp) {
+    alert("Выделите композицию 1080x1350 (4:3) в панели Project!");
     return;
   }
+  if (!(sourceComp.width === 1080 && sourceComp.height === 1350)) {
+    alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выделите композицию с этим разрешением.");
+    return;
+  }
+  var version = getVersionFromName(sourceComp.name);
+  app.beginUndoGroup("Special Build " + label);
+  unlockAllLayers(sourceComp);
+  var newName2 = buildProjectName(version, target.w, target.h);
+  var newComp2 = buildSpecialBuildComp(sourceComp, newName2, targetKey);
+  newComp2.openInViewer();
+  app.endUndoGroup();
+}
 
-  // Приоритет 2: ничего не выделено в Project — проверяем слой на таймлайне.
+// Ctrl+Click на 1:1 / 16:9: работаем ТОЛЬКО с выделенным слоем на таймлайне
+// (source которого — композиция 1080x1350) — заменяем композицию в слое.
+function processSpecialBuildTimeline(targetKey: string) {
+  var proj = app.project;
+  var target = RESOLUTIONS[targetKey];
+  var label = SPECIAL_BUILD_LABELS[targetKey] || targetKey;
   var active = proj.activeItem;
-  if (active && active instanceof CompItem && active.selectedLayers.length === 1) {
-    var selLayer = active.selectedLayers[0];
-    if (!(selLayer instanceof AVLayer) || !selLayer.source || !(selLayer.source instanceof CompItem)) {
-      alert("Выделенный слой на таймлайне не является композицией.");
-      return;
-    }
-    var srcComp = selLayer.source;
-    if (!(srcComp.width === 1080 && srcComp.height === 1350)) {
-      alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выберите слой с таким источником.");
-      return;
-    }
 
-    app.beginUndoGroup("Special Build " + label);
-    unlockAllLayers(srcComp);
-    var newName = buildTimelineName(srcComp.name, target.w, target.h);
-    var newComp = buildSpecialBuildComp(srcComp, newName, targetKey);
-    selLayer.replaceSource(newComp, false);
-    alert("✅ Готово!\nСоздана копия \"" + newName + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
-    app.endUndoGroup();
+  if (!(active && active instanceof CompItem && active.selectedLayers.length === 1)) {
+    alert("Выделите один слой на таймлайне (source которого — композиция 1080x1350)!");
+    return;
+  }
+  var selLayer = active.selectedLayers[0];
+  if (!(selLayer instanceof AVLayer) || !selLayer.source || !(selLayer.source instanceof CompItem)) {
+    alert("Выделенный слой на таймлайне не является композицией.");
+    return;
+  }
+  var srcComp = selLayer.source;
+  if (!(srcComp.width === 1080 && srcComp.height === 1350)) {
+    alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выберите слой с таким источником.");
     return;
   }
 
-  alert("Выделите композицию 1080x1350 (4:3) в Project или соответствующий слой на таймлайне!");
+  app.beginUndoGroup("Special Build " + label);
+  unlockAllLayers(srcComp);
+  var newName = buildTimelineName(srcComp.name, target.w, target.h);
+  var newComp = buildSpecialBuildComp(srcComp, newName, targetKey);
+  selLayer.replaceSource(newComp, false);
+  alert("✅ Готово!\nСоздана копия \"" + newName + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
+  app.endUndoGroup();
 }
 
 // Alt+Click на 9:16: создаёт пустую референсную композицию 1080x1920 с гайд-слоем
@@ -778,8 +815,13 @@ export function cropButtonClick(key: string, ctrlKey: boolean, altKey: boolean) 
 }
 
 // Кнопки 1:1 / 16:9 — блюр-фон build (та же механика для обеих).
-export function specialBuildButtonClick(targetKey: string) {
-  processSpecialBuild(targetKey);
+// Click — resize in project, Ctrl+Click — resize in timeline (как у 9:16/4:3).
+export function specialBuildButtonClick(targetKey: string, ctrlKey: boolean) {
+  if (ctrlKey) {
+    processSpecialBuildTimeline(targetKey);
+  } else {
+    processSpecialBuildProject(targetKey);
+  }
 }
 
 function escName(n: string) { return n.replace(/\\/g, "\\\\").replace(/"/g, "\\\""); }
@@ -870,36 +912,38 @@ function applyControllers() {
 
   var outerLayerIndex = selectedLayerOnTimeline.index;
 
-  // Один общий контроллер Position (Point Control) и один общий контроллер
-  // Scale (Slider Control — одно число сразу на X и Y, соотношение сторон
-  // всегда залочено) на внешнем слое — аддитивным офсетом привязываются к
-  // Position/Scale ВСЕХ непривязанных (без parent) слоёв внутри прекомпа.
-  // Так можно двигать и масштабировать содержимое прекомпа целиком, не заходя внутрь.
-  getOrAddEffect(selectedLayerOnTimeline, "ADBE Point Control", "Position", [0, 0]);
-  getOrAddEffect(selectedLayerOnTimeline, "ADBE Slider Control", "Scale", 0);
-
-  var exprPosition = 'var c = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("Position")("Point");\n' +
-    'value + (value.length == 3 ? [c[0], c[1], 0] : c);';
-  var exprScale = 'var c = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("Scale")("Slider");\n' +
-    'value + (value.length == 3 ? [c, c, 0] : [c, c]);';
-
+  // Отдельный контроллер Position (Point Control) и Scale (Slider Control,
+  // пропорциональный — одно число сразу на X и Y) на КАЖДЫЙ непривязанный
+  // (без parent) слой внутри прекомпа, имя контроллера — по имени слоя.
+  // Position — аддитивный офсет, Scale — множитель (100 = без изменений).
   var count = 0;
   for (var i = 1; i <= innerComp.numLayers; i++) {
     var layer = innerComp.layer(i);
+    if (layer instanceof CameraLayer || layer instanceof LightLayer) continue;
     if (layer.parent !== null) continue;
-    try {
-      var transform = layer.property("ADBE Transform Group") as PropertyGroup;
-      if (transform) {
-        transform.property("ADBE Position").expression = exprPosition;
-        transform.property("ADBE Scale").expression = exprScale;
-        count++;
-      }
-    } catch (e) {
-      // Пропускаем слои, для которых не удалось навесить выражение
-    }
+    if (!layer.hasVideo) continue;
+    var transform = layer.property("ADBE Transform Group") as PropertyGroup;
+    if (!transform) continue;
+    var pos = transform.property("ADBE Position");
+    var scl = transform.property("ADBE Scale");
+    if (!pos || !scl) continue;
+
+    var layerLabel = layer.name;
+    var posCtrlName = layerLabel + "_Position";
+    var sclCtrlName = layerLabel + "_Scale";
+    getOrAddEffect(selectedLayerOnTimeline, "ADBE Point Control", posCtrlName, [0, 0]);
+    getOrAddEffect(selectedLayerOnTimeline, "ADBE Slider Control", sclCtrlName, 100);
+
+    var posExpr = 'var p = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("' + escName(posCtrlName) + '")("Point");\n' +
+      'value + (value.length==3 ? [p[0], p[1], 0] : p);';
+    var sclExpr = 'var s = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("' + escName(sclCtrlName) + '")("Slider")/100;\n' +
+      'value * s;';
+    pos.expression = posExpr;
+    scl.expression = sclExpr;
+    count++;
   }
 
-  alert("Done!\nReplaced with clean source.\n" + count + " unparented layer(s) linked to outer Position/Scale controllers.");
+  alert("Done!\nReplaced with clean source & Controllers added.\n" + count + " unparented layer(s) got their own Position/Scale controllers.");
 }
 
 // === ЭКСПОРТ ПАРАМЕТРОВ СО КЛЮЧАМИ В ESSENTIAL GRAPHICS ===
@@ -1095,6 +1139,7 @@ export function renderButtonClick(lang: string, creatorName: string) {
 
     for (var i = 0; i < compsToRender.length; i++) {
       var comp = compsToRender[i];
+      applyVersionLabel(comp);
       // Язык в имени файла — из суффикса самой композиции (например "_EN"),
       // а не из дропдауна: так рендер нескольких языков сразу называется верно.
       var langCode = extractLanguageCodeFromName(comp.name) || defaultLang;
@@ -1149,6 +1194,7 @@ export function collectButtonClick(lang: string, ctrlKey: boolean) {
     for (var r = 0; r < selectedComps.length; r++) {
       var c = selectedComps[r];
       c.name = buildProjectName(getVersionFromName(c.name), c.width, c.height) + "_" + compLangs[c.id];
+      applyVersionLabel(c);
     }
 
     // 2) Удаление всех папок: сначала всё содержимое в корень, затем удаляем пустые папки
