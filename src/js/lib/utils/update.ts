@@ -72,7 +72,7 @@ function elevateAndCopyDir(sourceDir: string, destDir: string): void {
 // установленной папки расширения (csi.getSystemPath("extension")) — без
 // переустановки через .zxp. После этого нужен перезапуск AE, чтобы CEP
 // перечитал обновлённые файлы.
-export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<void> => {
+export const downloadAndInstallUpdate = async (downloadUrl: string, allowElevation: boolean): Promise<void> => {
   const AdmZip = require("adm-zip");
 
   const res = await fetch(downloadUrl);
@@ -127,8 +127,14 @@ export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<voi
 
     // Если часть файлов не записалась обычным способом — почти всегда это
     // означает, что папка расширения защищена от записи без прав
-    // администратора. Просим права один раз и копируем весь staging целиком.
+    // администратора. Системный запрос прав (UAC) показываем только когда
+    // это явно разрешено (клик по кнопке "Обновить") — тихая автопроверка
+    // при каждом открытии панели НЕ должна неожиданно всплывать с диалогом
+    // Windows, поэтому там allowElevation=false и ошибка просто уходит выше.
     if (failedEntries.length > 0) {
+      if (!allowElevation) {
+        throw new Error("Не удалось обновить файлы: " + failedEntries.join(", "));
+      }
       try {
         elevateAndCopyDir(stagingDir, extensionDir);
       } catch (elevateErr: any) {
@@ -148,9 +154,9 @@ export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<voi
 // main.tsx). Ошибки самой проверки (например нет интернета) не выбрасываются
 // наружу, чтобы не мешать открытию панели — вызывающий код сам решает, что
 // показать пользователю по результату.
-export const checkAndAutoInstallUpdate = async (): Promise<{ installed: boolean; version?: string }> => {
+export const checkAndAutoInstallUpdate = async (allowElevation: boolean): Promise<{ installed: boolean; version?: string }> => {
   const result = await checkForUpdate();
   if (!result.hasUpdate || !result.downloadUrl) return { installed: false };
-  await downloadAndInstallUpdate(result.downloadUrl);
+  await downloadAndInstallUpdate(result.downloadUrl, allowElevation);
   return { installed: true, version: result.latestVersion };
 };

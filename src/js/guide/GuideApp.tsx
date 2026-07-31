@@ -106,7 +106,10 @@ export const GuideApp = () => {
         alert("Найдена версия " + result.latestVersion + ", но в релизе нет .zip-файла для установки.");
         return;
       }
-      await downloadAndInstallUpdate(result.downloadUrl);
+      // allowElevation: true — это явный клик пользователя, здесь можно
+      // показать системный запрос прав администратора (UAC), если он
+      // понадобится для записи в защищённую папку расширения.
+      await downloadAndInstallUpdate(result.downloadUrl, true);
       alert(
         "✅ Обновление до версии " + result.latestVersion + " установлено.\n" +
         "Перезапустите After Effects, чтобы изменения вступили в силу."

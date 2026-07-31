@@ -67,7 +67,9 @@ export const App = () => {
     // Ошибки самой проверки (например нет интернета) не показываем, чтобы
     // не мешать открытию панели.
     import("../lib/utils/update")
-      .then(({ checkAndAutoInstallUpdate }) => checkAndAutoInstallUpdate())
+      // allowElevation: false — тихая проверка никогда не должна сама
+      // всплывать системным запросом прав администратора (UAC).
+      .then(({ checkAndAutoInstallUpdate }) => checkAndAutoInstallUpdate(false))
       .then((res) => {
         if (res.installed) {
           alert(
