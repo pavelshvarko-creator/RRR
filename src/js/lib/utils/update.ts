@@ -1,5 +1,5 @@
 import { csi } from "./bolt";
-import { fs, os, path } from "../cep/node";
+import { fs, os, path, child_process } from "../cep/node";
 import { version as currentVersion } from "../../../shared/shared";
 
 // Репозиторий на GitHub, откуда панель проверяет и качает обновления.
@@ -43,6 +43,31 @@ export const checkForUpdate = async (): Promise<UpdateCheckResult> => {
   };
 };
 
+// На части машин расширение установлено в защищённую системную папку
+// (Program Files), и обычный (не-админский) процесс AE в принципе не может
+// туда писать — это ограничение самой Windows, не временный сбой, поэтому
+// повторные попытки внутри процесса не помогают. В этом случае запускаем
+// один системный запрос прав администратора (как у любого установщика —
+// пользователь просто нажимает "Да" в диалоге Windows) и копируем файлы
+// уже с этими правами. Ничего вручную переустанавливать не нужно.
+function elevateAndCopyDir(sourceDir: string, destDir: string): void {
+  const scriptPath = path.join(os.tmpdir(), "rrr_elevated_update_" + Date.now() + ".ps1");
+  const esc = (p: string) => p.replace(/'/g, "''");
+  const psScript =
+    "Copy-Item -Path '" + esc(sourceDir) + "\\*' -Destination '" + esc(destDir) + "' -Recurse -Force -ErrorAction Stop\n";
+  fs.writeFileSync(scriptPath, psScript, "utf8");
+
+  try {
+    child_process.execSync(
+      "powershell -NoProfile -Command \"Start-Process powershell -Verb RunAs -Wait -ArgumentList " +
+        "'-NoProfile -ExecutionPolicy Bypass -File \\\"" + scriptPath + "\\\"'\"",
+      { windowsHide: true }
+    );
+  } finally {
+    try { fs.unlinkSync(scriptPath); } catch (_) {}
+  }
+}
+
 // Качает zip с собранными файлами расширения и распаковывает их поверх текущей
 // установленной папки расширения (csi.getSystemPath("extension")) — без
 // переустановки через .zxp. После этого нужен перезапуск AE, чтобы CEP
@@ -59,30 +84,39 @@ export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<voi
 
   const extensionDir = csi.getSystemPath("extension");
   const tmpZipPath = path.join(os.tmpdir(), "rrr_update_" + Date.now() + ".zip");
+  // Сначала распаковываем во временную папку (туда запись всегда разрешена),
+  // а уже оттуда копируем в extensionDir — так staging не зависит от прав
+  // доступа к целевой папке и его можно целиком переиспользовать для
+  // повышенного (elevated) копирования, если обычная запись не пройдёт.
+  const stagingDir = path.join(os.tmpdir(), "rrr_update_staging_" + Date.now());
   fs.writeFileSync(tmpZipPath, buffer);
 
   try {
     const zip = new AdmZip(tmpZipPath);
     // Файлы записываем сами (fs.writeFileSync), а не через zip.extractAllTo —
-    // та дополнительно делает chmod на каждый файл, а в защищённых папках вроде
-    // Program Files это падает с EPERM и обрывает распаковку на середине,
-    // оставляя расширение в наполовину обновлённом виде.
-    //
-    // Некоторые файлы (например бандл уже открытого окна гайда) в момент
-    // обновления могут быть кратковременно заняты — Windows не даёт их
-    // перезаписать. Даём каждому файлу несколько попыток с паузой, прежде
-    // чем считать его действительно не обновившимся.
+    // та дополнительно делает chmod на каждый файл, что в защищённых папках
+    // не нужно и только добавляет лишнюю точку отказа.
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue;
+      const targetPath = path.join(stagingDir, entry.entryName);
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, entry.getData());
+    }
+
+    // Копируем staging -> extensionDir обычным способом. Некоторые файлы
+    // (например бандл уже открытого окна гайда) в момент обновления могут
+    // быть кратковременно заняты — даём несколько попыток с паузой.
     const failedEntries: string[] = [];
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
+      const srcPath = path.join(stagingDir, entry.entryName);
       const targetPath = path.join(extensionDir, entry.entryName);
-      const content = entry.getData();
 
       let written = false;
-      for (let attempt = 0; attempt < 5 && !written; attempt++) {
+      for (let attempt = 0; attempt < 3 && !written; attempt++) {
         try {
           fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-          fs.writeFileSync(targetPath, content);
+          fs.copyFileSync(srcPath, targetPath);
           written = true;
         } catch (e) {
           await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
@@ -90,11 +124,22 @@ export const downloadAndInstallUpdate = async (downloadUrl: string): Promise<voi
       }
       if (!written) failedEntries.push(entry.entryName);
     }
+
+    // Если часть файлов не записалась обычным способом — почти всегда это
+    // означает, что папка расширения защищена от записи без прав
+    // администратора. Просим права один раз и копируем весь staging целиком.
     if (failedEntries.length > 0) {
-      throw new Error("Не удалось обновить файлы: " + failedEntries.join(", "));
+      try {
+        elevateAndCopyDir(stagingDir, extensionDir);
+      } catch (elevateErr: any) {
+        throw new Error(
+          "Не удалось обновить файлы даже с правами администратора: " + failedEntries.join(", ")
+        );
+      }
     }
   } finally {
     try { fs.unlinkSync(tmpZipPath); } catch (_) {}
+    try { fs.rmSync(stagingDir, { recursive: true, force: true }); } catch (_) {}
   }
 };
 
