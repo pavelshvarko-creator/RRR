@@ -19,9 +19,19 @@ const getAppNameSafely = (): ApplicationName | "unknown" => {
     typeof BridgeTalk !== "undefined" &&
     typeof BridgeTalk.appName !== "undefined";
 
+  // ВАЖНО: BridgeTalk.appName сравниваем через тот же нормализующий compare()
+  // (регистр/формат), а не точным равенством — на части версий AE значение
+  // отличается по регистру/пробелам от ожидаемого "aftereffects", и точное
+  // сравнение никогда не совпадало (host[ns] не выставлялся вообще никогда
+  // за сессию, независимо от переустановки — это баг в логике, а не в файлах).
+  // И пробуем app.appName как запасной вариант, даже если BridgeTalk "работает",
+  // но вернул нераспознанное значение — раньше это вообще не проверялось.
   if (isBridgeTalkWorking) {
-    return BridgeTalk.appName;
-  } else if (app) {
+    const btName = BridgeTalk.appName;
+    if (compare(btName, "aftereffectsbeta")) return "aftereffectsbeta";
+    if (compare(btName, "aftereffects") || compare(btName, "after effects")) return "aftereffects";
+  }
+  if (app) {
     //@ts-ignore
     if (exists(app.appName)) {
       //@ts-ignore
