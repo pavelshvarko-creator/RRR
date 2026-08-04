@@ -795,9 +795,12 @@ function createEmpty4x3Comp() {
   return comp;
 }
 
-// Клик по кнопкам 9:16 / 4:3: Click — resize in project, Ctrl+Click — resize in timeline,
+// Клик по кнопкам 9:16 / 4:3 / 1:1: Click — resize in project, Ctrl+Click —
+// resize in timeline (без ограничения по исходному разрешению),
 // Alt+Click на 9:16 — создать референсную комп с гайдами сейфзоны,
-// Alt+Click на 4:3 — создать пустую комп 1080x1350 без гайд-слоёв.
+// Alt+Click на 4:3 — создать пустую комп 1080x1350 без гайд-слоёв,
+// Alt+Click на 1:1 — блюр-фон билд (старое поведение Click/Ctrl+Click),
+// работает только из исходника 1080x1350.
 export function cropButtonClick(key: string, ctrlKey: boolean, altKey: boolean) {
   if (key === "9x16" && altKey) {
     app.beginUndoGroup("Create Safe Zone Guide Comp");
@@ -811,6 +814,10 @@ export function cropButtonClick(key: string, ctrlKey: boolean, altKey: boolean) 
     try { createEmpty4x3Comp(); }
     catch (e: any) { alert("Error: " + e.toString()); }
     finally { app.endUndoGroup(); }
+    return;
+  }
+  if (key === "1x1" && altKey) {
+    processSpecialBuildProject("1x1");
     return;
   }
   if (ctrlKey) {

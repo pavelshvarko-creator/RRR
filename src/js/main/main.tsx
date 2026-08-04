@@ -168,8 +168,8 @@ export const App = () => {
           pressed={icon1x1Pressed}
           label="1:1"
           useIcons={useIcons}
-          title="1080x1080 (источник 1080x1350)&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline"
-          onClick={(e) => handleSpecialBuildClick("1x1", e)}
+          title="1080x1080&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline&#10;Alt+Клик — блюр-фон билд (источник 1080x1350)"
+          onClick={(e) => handleCropClick("1x1", e)}
         />
         <IconButton
           base={icon16x9}
