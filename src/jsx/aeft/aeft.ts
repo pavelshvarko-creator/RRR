@@ -697,38 +697,6 @@ function processSpecialBuildProject(targetKey: string) {
   app.endUndoGroup();
 }
 
-// Ctrl+Click на 1:1 / 16:9: работаем ТОЛЬКО с выделенным слоем на таймлайне
-// (source которого — композиция 1080x1350) — заменяем композицию в слое.
-function processSpecialBuildTimeline(targetKey: string) {
-  var proj = app.project;
-  var target = RESOLUTIONS[targetKey];
-  var label = SPECIAL_BUILD_LABELS[targetKey] || targetKey;
-  var active = proj.activeItem;
-
-  if (!(active && active instanceof CompItem && active.selectedLayers.length === 1)) {
-    alert("Выделите один слой на таймлайне (source которого — композиция 1080x1350)!");
-    return;
-  }
-  var selLayer = active.selectedLayers[0];
-  if (!(selLayer instanceof AVLayer) || !selLayer.source || !(selLayer.source instanceof CompItem)) {
-    alert("Выделенный слой на таймлайне не является композицией.");
-    return;
-  }
-  var srcComp = selLayer.source;
-  if (!(srcComp.width === 1080 && srcComp.height === 1350)) {
-    alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выберите слой с таким источником.");
-    return;
-  }
-
-  app.beginUndoGroup("Special Build " + label);
-  unlockAllLayers(srcComp);
-  var newName = buildTimelineName(srcComp.name, target.w, target.h);
-  var newComp = buildSpecialBuildComp(srcComp, newName, targetKey);
-  selLayer.replaceSource(newComp, false);
-  alert("✅ Готово!\nСоздана копия \"" + newName + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
-  app.endUndoGroup();
-}
-
 // Alt+Click на 9:16: создаёт пустую референсную композицию 1080x1920 с гайд-слоем
 // сейфзоны — двумя тонкими линиями на расстоянии 1350px друг от друга, симметрично
 // относительно центра. Это то, что остаётся видимым после кропа под 1080x1350 по высоте.
@@ -827,14 +795,10 @@ export function cropButtonClick(key: string, ctrlKey: boolean, altKey: boolean) 
   }
 }
 
-// Кнопки 1:1 / 16:9 — блюр-фон build (та же механика для обеих).
-// Click — resize in project, Ctrl+Click — resize in timeline (как у 9:16/4:3).
-export function specialBuildButtonClick(targetKey: string, ctrlKey: boolean) {
-  if (ctrlKey) {
-    processSpecialBuildTimeline(targetKey);
-  } else {
-    processSpecialBuildProject(targetKey);
-  }
+// Кнопка 16:9 — блюр-фон build. Только Click (работает с выделением в
+// панели Project) — без варианта на таймлайне.
+export function specialBuildButtonClick(targetKey: string) {
+  processSpecialBuildProject(targetKey);
 }
 
 function escName(n: string) { return n.replace(/\\/g, "\\\\").replace(/"/g, "\\\""); }
@@ -970,6 +934,36 @@ function hasKeyframes(prop: Property) {
   }
 }
 
+// Рекурсивно обходит группу свойств эффекта — некоторые эффекты (не только
+// простые Slider/Point Control) хранят анимируемые параметры не напрямую
+// внутри эффекта, а во вложенных подгруппах, поэтому обход в один уровень
+// их пропускал. canVaryOverTime не проверяем — это лишняя проверка, которая
+// могла ложно отфильтровывать реально анимированные параметры (например
+// ключи Slider Control): если у параметра есть ключи (numKeys > 0), он
+// однозначно анимирован, независимо от этого флага.
+function collectKeyframedInGroup(group: PropertyGroup, layer: AVLayer, effectName: string, props: any[]) {
+  for (var i = 1; i <= group.numProperties; i++) {
+    try {
+      var child = group.property(i);
+      if (!child) continue;
+      if (child.propertyType === PropertyType.PROPERTY) {
+        var p = child as Property;
+        if (hasKeyframes(p)) {
+          props.push({
+            layer: layer,
+            prop: p,
+            displayName: layer.name + " | " + effectName + " | " + p.name,
+            effectName: effectName,
+            paramName: p.name
+          });
+        }
+      } else {
+        collectKeyframedInGroup(child as PropertyGroup, layer, effectName, props);
+      }
+    } catch (e) {}
+  }
+}
+
 function collectKeyframedProps(comp: CompItem) {
   var props: any[] = [];
   for (var i = 1; i <= comp.numLayers; i++) {
@@ -1008,28 +1002,13 @@ function collectKeyframedProps(comp: CompItem) {
       }
     }
 
-    // Effects параметры
+    // Effects параметры (рекурсивно, включая вложенные подгруппы параметров)
     try {
       var effects = layer.property("ADBE Effect Parade") as PropertyGroup;
       if (effects && effects.numProperties > 0) {
         for (var ei = 1; ei <= effects.numProperties; ei++) {
           var effect = effects.property(ei) as PropertyGroup;
-          var effectName = effect.name;
-          for (var ej = 1; ej <= effect.numProperties; ej++) {
-            try {
-              var param = effect.property(ej) as Property;
-              if (param && hasKeyframes(param) && param.canVaryOverTime) {
-                props.push({
-                  layer: layer,
-                  effect: effect,
-                  prop: param,
-                  displayName: layer.name + " | " + effectName + " | " + param.name,
-                  effectName: effectName,
-                  paramName: param.name
-                });
-              }
-            } catch (e2) {}
-          }
+          collectKeyframedInGroup(effect, layer, effect.name, props);
         }
       }
     } catch (e) {}
