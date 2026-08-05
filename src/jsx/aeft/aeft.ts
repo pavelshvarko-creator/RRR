@@ -344,10 +344,12 @@ function getVersionFromName(name: string) {
 // Цвет-лейбл композиции по номеру версии в имени: V1 = Label 1, V2 = Label 2,
 // ... V16 = Label 16, дальше цикл заново (V17 = Label 1 и т.д.) — в AE ровно
 // 16 цветов-лейблов. Применяется при переименовании (кнопки ресайза), при
-// Collect и при Render — везде, где в имени есть "V?".
+// Collect и при Render — везде, где в имени есть "V?". Если "V?" в имени нет —
+// лейбл явно сбрасывается на None (0), а не остаётся прежним.
 function applyVersionLabel(comp: CompItem) {
-  var v = parseInt(getVersionFromName(comp.name), 10);
-  if (isNaN(v) || v < 1) return;
+  var m = comp.name.match(/[Vv](\d+)/);
+  if (!m) { comp.label = 0; return; }
+  var v = parseInt(m[1], 10);
   comp.label = ((v - 1) % 16) + 1;
 }
 
@@ -426,6 +428,7 @@ function duplicateCompVersionGraph(sourceComp: CompItem, newVersion: number, lan
       dup.name = buildProjectName(String(newVersion), w, h) + "_" + lang;
     } else {
       dup.name = orig.name + "_V" + newVersion;
+      applyVersionLabel(dup);
     }
     compMap[orig.id] = dup;
   }
@@ -605,6 +608,7 @@ function processCropResolutionTimeline(key: string) {
   unlockAllLayers(srcComp);
   var newComp = cropResizeComp(srcComp, target.w, target.h);
   newComp.name = buildTimelineName(srcComp.name, target.w, target.h);
+  applyVersionLabel(newComp);
   selLayer.replaceSource(newComp, false);
   alert("✅ Готово!\nСоздана копия \"" + newComp.name + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
   app.endUndoGroup();
@@ -690,6 +694,7 @@ function createSafeZoneGuideComp() {
   var lineThickness = 4;
 
   var comp = proj.items.addComp("V1__1080x1920_EN", compW, compH, 1, durationSec, frameRate);
+  applyVersionLabel(comp);
 
   var shapeLayer = comp.layers.addShape();
   shapeLayer.name = "Safe Zone Guide";
@@ -739,6 +744,7 @@ function createEmpty4x3Comp() {
   var name = buildProjectName("1", target.w, target.h) + "_EN";
 
   var comp = proj.items.addComp(name, target.w, target.h, 1, durationSec, frameRate);
+  applyVersionLabel(comp);
   comp.openInViewer();
   return comp;
 }
@@ -1181,6 +1187,16 @@ export function collectButtonClick(lang: string, ctrlKey: boolean) {
 
     // 5) Создание иерархии папок и сортировка — каждая композиция в свою <LANG>/<WxH>
     organizeProjectForCollect(proj, compLangs);
+
+    // 6) Лейблы по всему оставшемуся проекту: reduceProject (шаг 4) уже убрал всё,
+    //    не связанное с выделенными композициями, так что оставшиеся items — это
+    //    ровно выделенные комп'ы + их precomp/footage-зависимости. У всех, где в
+    //    имени есть "V?", лейбл выставляется по версии; у всех остальных —
+    //    явный None (см. applyVersionLabel).
+    for (var pi = 1; pi <= proj.numItems; pi++) {
+      var pItem = proj.item(pi);
+      if (pItem instanceof CompItem) applyVersionLabel(pItem);
+    }
   } catch (e: any) {
     alert("Error: " + e.toString());
     app.endUndoGroup();
