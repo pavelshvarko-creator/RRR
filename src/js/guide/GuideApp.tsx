@@ -31,7 +31,8 @@ const GUIDE_SECTIONS: GuideSection[] = [
     previewLabels: ["16:9"],
     title: "формат с размытым фоном",
     bullets: [
-      "Выберите в панели project композицию 1080x1350."
+      "Выберите в панели project композицию 1080x1350.",
+      "Ctrl+Click — заменяет выделенную на timeline композицию, дубликатом выбранного разрешения."
     ]
   },
   {

@@ -697,6 +697,38 @@ function processSpecialBuildProject(targetKey: string) {
   app.endUndoGroup();
 }
 
+// Ctrl+Click на 16:9: работаем ТОЛЬКО с выделенным слоем на таймлайне
+// (source которого — композиция 1080x1350) — заменяем композицию в слое.
+function processSpecialBuildTimeline(targetKey: string) {
+  var proj = app.project;
+  var target = RESOLUTIONS[targetKey];
+  var label = SPECIAL_BUILD_LABELS[targetKey] || targetKey;
+  var active = proj.activeItem;
+
+  if (!(active && active instanceof CompItem && active.selectedLayers.length === 1)) {
+    alert("Выделите один слой на таймлайне (source которого — композиция 1080x1350)!");
+    return;
+  }
+  var selLayer = active.selectedLayers[0];
+  if (!(selLayer instanceof AVLayer) || !selLayer.source || !(selLayer.source instanceof CompItem)) {
+    alert("Выделенный слой на таймлайне не является композицией.");
+    return;
+  }
+  var srcComp = selLayer.source;
+  if (!(srcComp.width === 1080 && srcComp.height === 1350)) {
+    alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выберите слой с таким источником.");
+    return;
+  }
+
+  app.beginUndoGroup("Special Build " + label);
+  unlockAllLayers(srcComp);
+  var newName = buildTimelineName(srcComp.name, target.w, target.h);
+  var newComp = buildSpecialBuildComp(srcComp, newName, targetKey);
+  selLayer.replaceSource(newComp, false);
+  alert("✅ Готово!\nСоздана копия \"" + newName + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
+  app.endUndoGroup();
+}
+
 // Alt+Click на 9:16: создаёт пустую референсную композицию 1080x1920 с гайд-слоем
 // сейфзоны — двумя тонкими линиями на расстоянии 1350px друг от друга, симметрично
 // относительно центра. Это то, что остаётся видимым после кропа под 1080x1350 по высоте.
@@ -795,10 +827,14 @@ export function cropButtonClick(key: string, ctrlKey: boolean, altKey: boolean) 
   }
 }
 
-// Кнопка 16:9 — блюр-фон build. Только Click (работает с выделением в
-// панели Project) — без варианта на таймлайне.
-export function specialBuildButtonClick(targetKey: string) {
-  processSpecialBuildProject(targetKey);
+// Кнопка 16:9 — блюр-фон build. Click — resize in project, Ctrl+Click —
+// resize in timeline.
+export function specialBuildButtonClick(targetKey: string, ctrlKey: boolean) {
+  if (ctrlKey) {
+    processSpecialBuildTimeline(targetKey);
+  } else {
+    processSpecialBuildProject(targetKey);
+  }
 }
 
 function escName(n: string) { return n.replace(/\\/g, "\\\\").replace(/"/g, "\\\""); }
