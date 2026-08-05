@@ -389,28 +389,6 @@ function getLanguageFromFolderHierarchy(folder: FolderItem | null, defaultLang?:
   return defaultLang || "EN";
 }
 
-// Находит папку с именем name внутри parent или создаёт её, если такой ещё нет.
-function getOrCreateFolder(name: string, parent: FolderItem): FolderItem {
-  var proj = app.project;
-  for (var i = 1; i <= proj.numItems; i++) {
-    var item = proj.item(i);
-    if (item instanceof FolderItem && item.parentFolder === parent && item.name === name) {
-      return item;
-    }
-  }
-  var fld = proj.items.addFolder(name);
-  fld.parentFolder = parent;
-  return fld;
-}
-
-// Находит (или создаёт, если ещё нет) иерархию <lang>/<WxH> в корне проекта —
-// та же структура, что и organizeProjectForCollect использует при сборе.
-function getOrCreateResolutionFolder(lang: string, w: number, h: number): FolderItem {
-  var proj = app.project;
-  var langFolder = getOrCreateFolder(lang, proj.rootFolder);
-  return getOrCreateFolder(w + "x" + h, langFolder);
-}
-
 // Собирает граф композиции: сама композиция + все вложенные precomp'ы,
 // на которые ссылаются её слои (рекурсивно, без дублей).
 function collectCompGraph(rootComp: CompItem): CompItem[] {
@@ -596,7 +574,6 @@ function processCropResolutionProject(key: string) {
   unlockAllLayers(sourceComp);
   var newComp2 = cropResizeComp(sourceComp, target.w, target.h);
   newComp2.name = buildProjectName(version, target.w, target.h) + "_" + lang;
-  newComp2.parentFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
   applyVersionLabel(newComp2);
   newComp2.openInViewer();
   app.endUndoGroup();
@@ -696,7 +673,7 @@ function processSpecialBuildProject(targetKey: string) {
   unlockAllLayers(sourceComp);
   var newName2 = buildProjectName(version, target.w, target.h) + "_" + lang;
   var newComp2 = buildSpecialBuildComp(sourceComp, newName2, targetKey);
-  newComp2.parentFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
+  newComp2.parentFolder = sourceComp.parentFolder;
   applyVersionLabel(newComp2);
   newComp2.openInViewer();
   app.endUndoGroup();
@@ -713,7 +690,6 @@ function createSafeZoneGuideComp() {
   var lineThickness = 4;
 
   var comp = proj.items.addComp("V1__1080x1920_EN", compW, compH, 1, durationSec, frameRate);
-  comp.parentFolder = getOrCreateResolutionFolder("EN", compW, compH);
 
   var shapeLayer = comp.layers.addShape();
   shapeLayer.name = "Safe Zone Guide";
@@ -763,7 +739,6 @@ function createEmpty4x3Comp() {
   var name = buildProjectName("1", target.w, target.h) + "_EN";
 
   var comp = proj.items.addComp(name, target.w, target.h, 1, durationSec, frameRate);
-  comp.parentFolder = getOrCreateResolutionFolder("EN", target.w, target.h);
   comp.openInViewer();
   return comp;
 }
