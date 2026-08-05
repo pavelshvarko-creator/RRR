@@ -470,23 +470,23 @@ function duplicateCompVersionGraph(sourceComp: CompItem, newVersion: number, lan
 // композиции УЖЕ совпадает с целевым разрешением кнопки: вместо кропа/билда
 // либо переименовываем композицию по формуле V?__WxH_LANG (если имя ещё не
 // соответствует формуле), либо, если оно уже соответствует, создаём
-// независимый дубликат всего графа со следующим номером версии.
+// независимый дубликат всего графа со следующим номером версии. Композиция
+// (или её новый дубликат) остаётся в ТОЙ ЖЕ папке, где уже находится —
+// никаких lang/WxH-папок здесь не создаём и никуда не перекладываем: это
+// исключительно задача кнопки collect/ctrl+collect.
 // Без своей undo-группы — её открывают вызывающие обёртки (одиночная/массовая).
 function renameOrVersionCompCore(sourceComp: CompItem, key: string) {
   var target = RESOLUTIONS[key];
   var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
   var expectedName = buildProjectName(getVersionFromName(sourceComp.name), target.w, target.h) + "_" + lang;
-  var destFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
 
   if (sourceComp.name === expectedName) {
     var newVersion = getNextVersionInFolder(sourceComp.parentFolder, target.w, target.h);
     var dupRoot = duplicateCompVersionGraph(sourceComp, newVersion, lang, target.w, target.h);
-    dupRoot.parentFolder = destFolder;
     applyVersionLabel(dupRoot);
     dupRoot.openInViewer();
   } else {
     sourceComp.name = expectedName;
-    sourceComp.parentFolder = destFolder;
     applyVersionLabel(sourceComp);
     sourceComp.openInViewer();
   }
