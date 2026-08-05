@@ -517,14 +517,18 @@ function renameOrVersionComps(comps: CompItem[], key: string) {
   }
 }
 
-// Дублирует композицию и обрезает/дополняет сверху-снизу до targetH,
-// сохраняя положение всех слоёв относительно центра кадра. Ширина не меняется.
-function cropResizeComp(sourceComp: CompItem, targetH: number) {
+// Дублирует композицию и обрезает/дополняет со всех сторон до targetW x
+// targetH, сохраняя положение всех слоёв относительно ЦЕНТРА кадра (не
+// только по высоте, как раньше, — 16:9 меняет ещё и ширину, в отличие от
+// 9:16/4:3/1:1, у которых ширина всегда 1080 и не меняется).
+function cropResizeComp(sourceComp: CompItem, targetW: number, targetH: number) {
   var newComp = sourceComp.duplicate();
+  var oldW = newComp.width;
   var oldH = newComp.height;
-  var diff = (targetH - oldH) / 2;
+  var diffX = (targetW - oldW) / 2;
+  var diffY = (targetH - oldH) / 2;
   var tNull = newComp.layers.addNull();
-  tNull.transform.position.setValue([newComp.width / 2, oldH / 2]);
+  tNull.transform.position.setValue([oldW / 2, oldH / 2]);
   var parents: any[] = [];
   for (var i = 1; i <= newComp.numLayers; i++) {
     var lyr = newComp.layer(i);
@@ -532,9 +536,10 @@ function cropResizeComp(sourceComp: CompItem, targetH: number) {
     parents[i] = lyr.parent;
     if (lyr.parent === null) lyr.parent = tNull;
   }
+  newComp.width = targetW;
   newComp.height = targetH;
   var curP = tNull.transform.position.value;
-  tNull.transform.position.setValue([curP[0], curP[1] + diff]);
+  tNull.transform.position.setValue([curP[0] + diffX, curP[1] + diffY]);
   for (var j = 1; j <= newComp.numLayers; j++) {
     var l = newComp.layer(j);
     if (l !== tNull && l.parent === tNull) l.parent = parents[j];
@@ -589,7 +594,7 @@ function processCropResolutionProject(key: string) {
   var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
   app.beginUndoGroup("Resize " + key);
   unlockAllLayers(sourceComp);
-  var newComp2 = cropResizeComp(sourceComp, target.h);
+  var newComp2 = cropResizeComp(sourceComp, target.w, target.h);
   newComp2.name = buildProjectName(version, target.w, target.h) + "_" + lang;
   newComp2.parentFolder = getOrCreateResolutionFolder(lang, target.w, target.h);
   applyVersionLabel(newComp2);
@@ -621,7 +626,7 @@ function processCropResolutionTimeline(key: string) {
 
   app.beginUndoGroup("Resize " + key);
   unlockAllLayers(srcComp);
-  var newComp = cropResizeComp(srcComp, target.h);
+  var newComp = cropResizeComp(srcComp, target.w, target.h);
   newComp.name = buildTimelineName(srcComp.name, target.w, target.h);
   selLayer.replaceSource(newComp, false);
   alert("✅ Готово!\nСоздана копия \"" + newComp.name + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
