@@ -93,10 +93,6 @@ export const App = () => {
     evalTS("cropButtonClick", key, e.ctrlKey, e.altKey);
   };
 
-  const handleSpecialBuildClick = (targetKey: string, e: React.MouseEvent) => {
-    evalTS("specialBuildButtonClick", targetKey, e.ctrlKey);
-  };
-
   const handleCtrlClick = (e: React.MouseEvent) => {
     evalTS("ctrlButtonClick", e.ctrlKey);
   };
@@ -177,8 +173,8 @@ export const App = () => {
           pressed={icon16x9Pressed}
           label="16:9"
           useIcons={useIcons}
-          title="1920x1080 (источник 1080x1350)&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline"
-          onClick={(e) => handleSpecialBuildClick("16x9", e)}
+          title="1920x1080&#10;&#10;Клик — ресайз в Project&#10;Ctrl+Клик — ресайз на Timeline&#10;Alt+Клик — блюр-фон билд (источник 1080x1350)"
+          onClick={(e) => handleCropClick("16x9", e)}
         />
         <IconButton
           base={iconCtrl}
