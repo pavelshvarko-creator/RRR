@@ -249,9 +249,9 @@ function getVersionFromName(name: string) {
 
 // Цвет-лейбл композиции по номеру версии в имени: V1 = Label 1, V2 = Label 2,
 // ... V16 = Label 16, дальше цикл заново (V17 = Label 1 и т.д.) — в AE ровно
-// 16 цветов-лейблов. Применяется при переименовании (кнопки ресайза), при
-// Collect и при Render — везде, где в имени есть "V?". Если "V?" в имени нет —
-// лейбл явно сбрасывается на None (0), а не остаётся прежним.
+// 16 цветов-лейблов. Применяется при переименовании, ресайзе и Render —
+// везде, где в имени есть "V?". Если "V?" в имени нет — лейбл явно
+// сбрасывается на None (0), а не остаётся прежним.
 function applyVersionLabel(comp: CompItem) {
   var m = comp.name.match(/[Vv](\d+)/);
   if (!m) { comp.label = 0; return; }
@@ -359,8 +359,7 @@ function duplicateCompVersionGraph(sourceComp: CompItem, newVersion: number, lan
 // соответствует формуле), либо, если оно уже соответствует, создаём
 // независимый дубликат всего графа со следующим номером версии. Композиция
 // (или её новый дубликат) остаётся в ТОЙ ЖЕ папке, где уже находится —
-// никаких lang/WxH-папок здесь не создаём и никуда не перекладываем: это
-// исключительно задача кнопки collect/ctrl+collect.
+// никаких lang/WxH-папок здесь не создаём и никуда не перекладываем.
 // Без своей undo-группы — её открывают вызывающие обёртки (одиночная/массовая).
 function renameOrVersionCompCore(sourceComp: CompItem, key: string) {
   var target = RESOLUTIONS[key];
@@ -689,7 +688,7 @@ export function cropButtonClick(key: string, ctrlKey: boolean, altKey: boolean) 
 
 function escName(n: string) { return n.replace(/\\/g, "\\\\").replace(/"/g, "\\\""); }
 
-// Render/Collect должны работать одинаково и при выделении композиций напрямую,
+// Render должен работать одинаково и при выделении композиций напрямую,
 // и при выделении папок с композициями — в этом случае берутся ВСЕ композиции
 // внутри такой папки (рекурсивно, включая вложенные подпапки).
 function collectCompsInFolder(folder: FolderItem, seenIDs: { [id: number]: boolean }, result: CompItem[]) {
