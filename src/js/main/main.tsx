@@ -22,9 +22,6 @@ import iconCtrlPressed from "../assets/RRR/ctrl_2.png";
 import iconRender from "../assets/RRR/Render.png";
 import iconRenderHover from "../assets/RRR/Render_1.png";
 import iconRenderPressed from "../assets/RRR/Render_2.png";
-import iconCollect from "../assets/RRR/Collect.png";
-import iconCollectHover from "../assets/RRR/Collect_1.png";
-import iconCollectPressed from "../assets/RRR/Collect_2.png";
 
 const LANG_CODES = ["EN", "AR", "DA", "DE", "ES", "FI", "FR", "IT", "JA", "KO", "NL", "SV", "TH"];
 
@@ -99,10 +96,6 @@ export const App = () => {
 
   const handleRenderClick = () => {
     evalTS("renderButtonClick", lang, name);
-  };
-
-  const handleCollectClick = (e: React.MouseEvent) => {
-    evalTS("collectButtonClick", lang, e.ctrlKey);
   };
 
   const handleLangChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -186,15 +179,6 @@ export const App = () => {
           onClick={handleCtrlClick}
         />
 
-        <IconButton
-          base={iconCollect}
-          hover={iconCollectHover}
-          pressed={iconCollectPressed}
-          label="collect"
-          useIcons={useIcons}
-          title="Клик — чистка проекта&#10;Ctrl+Клик — чистка и сборка коллекта"
-          onClick={handleCollectClick}
-        />
         <IconButton
           base={iconRender}
           hover={iconRenderHover}
