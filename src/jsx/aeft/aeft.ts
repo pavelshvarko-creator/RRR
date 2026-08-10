@@ -296,19 +296,22 @@ export function onLanguageChange(newLang: string, currentLang: string, creatorNa
   var proj = app.project;
   var selectedItems = proj.selection;
 
-  // Композиция выбрана напрямую (не папка) — просто меняем/добавляем
-  // суффикс языка у самой композиции (для любого языка, включая EN), без
+  // Композиции выбраны напрямую (не папка) — просто меняем/добавляем
+  // суффикс языка у КАЖДОЙ из них (для любого языка, включая EN), без
   // дубликата и без папок — та же формула суффикса, что и везде в скрипте.
-  var selectedComp: CompItem | null = null;
+  // Работает и на одну, и на несколько выделенных сразу.
+  var selectedComps: CompItem[] = [];
   for (var ci = 0; ci < selectedItems.length; ci++) {
-    if (selectedItems[ci] instanceof CompItem) { selectedComp = selectedItems[ci] as CompItem; break; }
+    if (selectedItems[ci] instanceof CompItem) selectedComps.push(selectedItems[ci] as CompItem);
   }
-  if (selectedComp) {
+  if (selectedComps.length > 0) {
     app.beginUndoGroup("Set Composition Language Suffix");
     try {
-      selectedComp.name = stripLanguageSuffix(selectedComp.name) + "_" + newLang;
+      for (var sc = 0; sc < selectedComps.length; sc++) {
+        selectedComps[sc].name = stripLanguageSuffix(selectedComps[sc].name) + "_" + newLang;
+      }
       saveLangCreatorSettings(newLang, creatorName);
-      alert("✅ Суффикс языка изменён на \"" + newLang + "\".");
+      alert("✅ Суффикс языка изменён на \"" + newLang + "\" для выделенных композиций.");
       return true;
     } catch (e: any) {
       alert("Ошибка: " + e.toString());
