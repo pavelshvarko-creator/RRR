@@ -112,8 +112,13 @@ export const App = () => {
       setCustomLangMode(true);
       return;
     }
+    // Сбрасываем value сразу — иначе повторный выбор ТОЙ ЖЕ опции (например
+    // EN сразу после EN, а EN — дефолт при старте панели) не порождает у
+    // браузера событие onChange вовсе (значение визуально не меняется), и
+    // действие (ренейм папки/суффикса) просто не срабатывает.
+    setLang("");
     evalTS("onLanguageChange", newLang, lang, name).then((success) => {
-      if (success) setLang(newLang);
+      setLang(success ? newLang : lang);
     });
   };
 
@@ -121,8 +126,9 @@ export const App = () => {
     const code = customLangValue.toUpperCase();
     setCustomLangMode(false);
     if (code.length !== 2) return;
+    setLang("");
     evalTS("onLanguageChange", code, lang, name).then((success) => {
-      if (success) setLang(code);
+      setLang(success ? code : lang);
     });
   };
 
