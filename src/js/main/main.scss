@@ -89,10 +89,23 @@
   letter-spacing: 1px;
 }
 
+// Слот резервирует ту же ширину, что и обычная кнопка (.rrr-icon-btn/
+// .rrr-std-btn — 56px), хотя сама "i" внутри рисуется маленьким кружком.
+// Благодаря этому при flex-wrap у .rrr-panel "i" всегда либо помещается
+// на строке целиком (как полноценная кнопка), либо целиком уходит на свою
+// отдельную строку — как и остальные кнопки, а не остаётся втиснутой
+// рядом с селектором языка в узкой (вертикальной) панели.
+.rrr-info-btn-slot {
+  width: 56px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .rrr-info-btn {
   width: 15px;
   height: 15px;
-  margin-left: 8px;
   border-radius: 50%;
   border: 2px solid #999;
   background: transparent;

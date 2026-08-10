@@ -296,6 +296,62 @@ export function onLanguageChange(newLang: string, currentLang: string, creatorNa
   var proj = app.project;
   var selectedItems = proj.selection;
 
+  // Композиция выбрана напрямую (не папка) — просто меняем/добавляем
+  // суффикс языка у самой композиции (для любого языка, включая EN), без
+  // дубликата и без папок — та же формула суффикса, что и везде в скрипте.
+  var selectedComp: CompItem | null = null;
+  for (var ci = 0; ci < selectedItems.length; ci++) {
+    if (selectedItems[ci] instanceof CompItem) { selectedComp = selectedItems[ci] as CompItem; break; }
+  }
+  if (selectedComp) {
+    app.beginUndoGroup("Set Composition Language Suffix");
+    try {
+      selectedComp.name = stripLanguageSuffix(selectedComp.name) + "_" + newLang;
+      saveLangCreatorSettings(newLang, creatorName);
+      alert("✅ Суффикс языка изменён на \"" + newLang + "\".");
+      return true;
+    } catch (e: any) {
+      alert("Ошибка: " + e.toString());
+      return false;
+    } finally {
+      app.endUndoGroup();
+    }
+  }
+
+  // EN — особый случай: переименовываем выделенную папку на месте, без
+  // дубликата. Работает с ЛЮБОЙ папкой с композициями (не обязательно уже
+  // двубуквенной) — так исходную/непомеченную папку можно один раз
+  // назначить базовым языком EN. Дубликат создаётся только при выборе
+  // остальных языков (см. ветку ниже).
+  if (newLang === "EN") {
+    var folderToRename: FolderItem | null = null;
+    for (var fi = 0; fi < selectedItems.length; fi++) {
+      var fItem = selectedItems[fi];
+      if (fItem instanceof FolderItem) {
+        var seenIDs: { [id: number]: boolean } = {};
+        var foundComps: CompItem[] = [];
+        collectCompsInFolder(fItem, seenIDs, foundComps);
+        if (foundComps.length > 0) { folderToRename = fItem; break; }
+      }
+    }
+    if (!folderToRename) {
+      alert("Пожалуйста, выделите папку с композициями.");
+      return false;
+    }
+    app.beginUndoGroup("Rename Folder to EN");
+    try {
+      folderToRename.name = "EN";
+      saveLangCreatorSettings(newLang, creatorName);
+      alert("✅ Папка переименована в \"EN\".");
+      return true;
+    } catch (e: any) {
+      alert("Ошибка: " + e.toString());
+      return false;
+    } finally {
+      app.endUndoGroup();
+    }
+  }
+
   // Ищем выбранную папку с двубуквенным именем
   var selectedFolder: FolderItem | null = null;
   for (var si = 0; si < selectedItems.length; si++) {
@@ -1091,7 +1147,6 @@ export function renderButtonClick(lang: string, creatorName: string) {
   try {
     var projectName = proj.file ? proj.file.name.replace(/\.[^\.]+$/, "") : "Untitled_Project";
     var desktopPath = Folder.desktop.fsName;
-    var defaultLang = lang;
     var creator = creatorName;
     saveLangCreatorSettings(lang, creatorName);
 
@@ -1113,8 +1168,11 @@ export function renderButtonClick(lang: string, creatorName: string) {
       var comp = compsToRender[i];
       applyVersionLabel(comp);
       // Язык в имени файла — из суффикса самой композиции (например "_EN"),
-      // а не из дропдауна: так рендер нескольких языков сразу называется верно.
-      var langCode = extractLanguageCodeFromName(comp.name) || defaultLang;
+      // иначе из иерархии папок (EN/ES/... на любой глубине), а не из
+      // дропдауна: так рендер нескольких языков сразу называется верно.
+      // Если ни суффикса, ни языковой папки нет — язык по умолчанию EN
+      // (см. getLanguageFromFolderHierarchy).
+      var langCode = extractLanguageCodeFromName(comp.name) || getLanguageFromFolderHierarchy(comp.parentFolder);
       var width = comp.width;
       var height = comp.height;
       var durationSec = Math.ceil(comp.workAreaDuration);

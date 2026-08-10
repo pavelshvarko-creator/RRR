@@ -230,9 +230,11 @@ export const App = () => {
           </span>
         )}
 
-        <button className="rrr-info-btn" title="info" onClick={handleInfoClick}>
-          i
-        </button>
+        <span className="rrr-info-btn-slot">
+          <button className="rrr-info-btn" title="info" onClick={handleInfoClick}>
+            i
+          </button>
+        </span>
       </div>
     </div>
   );
