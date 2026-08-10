@@ -250,9 +250,9 @@ export const App = () => {
               title="Выделите папку в Project"
               onClick={() => setLangDropdownOpen((open) => !open)}
             >
-              {lang}
+              <span>{lang}</span>
+              <span className="rrr-lang-select-chevron" />
             </button>
-            <span className="rrr-lang-select-arrow" />
             {langDropdownOpen && (
               <div className="rrr-lang-dropdown">
                 {LANG_CODES.map((code) => (

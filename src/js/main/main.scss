@@ -59,25 +59,33 @@
   align-items: center;
 }
 
+// Тот же вид, что и у превью "EN ▾" в гайде (guide.scss:
+// .guide-preview-box + .guide-preview-dropdown) — округлая тёмная плашка
+// без рамки, белый текст, вместо прежнего вида нативного select
+// (прямоугольник с рамкой $dark).
 .rrr-lang-select {
-  width: auto;
+  min-width: 56px;
   height: 32px;
-  background: $panelBlack;
-  color: $font;
-  border: 1px solid $dark;
-  padding: 0 14px 0 6px;
-  appearance: none;
-  -webkit-appearance: none;
+  background: #141414;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
 }
 
 // Кнопка-триггер собственного дропдауна (см. main.tsx) — вместо
 // нативного <select>, у которого внутри CEP-панели, встроенной в AE, не
 // было надёжного onChange на реальный клик мышью (см. комментарий у
-// handleLangPick в main.tsx). Наследует .rrr-lang-select визуально,
-// только нормализует то, что браузер иначе стилизует у <button> сам.
+// handleLangPick в main.tsx).
 .rrr-lang-select-btn {
-  font: inherit;
-  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  white-space: nowrap;
   cursor: pointer;
 
   &:hover {
@@ -88,17 +96,12 @@
   }
 }
 
-.rrr-lang-select-arrow {
-  position: absolute;
-  right: 9px;
-  top: 50%;
-  transform: translateY(-50%);
+.rrr-lang-select-chevron {
   width: 0;
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid $font;
-  pointer-events: none;
+  border-top: 5px solid #999;
 }
 
 .rrr-lang-dropdown {
@@ -131,8 +134,9 @@
 
 .rrr-lang-custom-input {
   text-transform: uppercase;
-  box-sizing: border-box;
   letter-spacing: 1px;
+  text-align: center;
+  padding: 0 8px;
 }
 
 // Слот резервирует ту же ширину, что и обычная кнопка (.rrr-icon-btn/
