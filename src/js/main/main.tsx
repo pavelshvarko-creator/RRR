@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { csi, subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
 import { ns } from "../../shared/shared";
 import { IconButton } from "./IconButton";
@@ -35,6 +35,8 @@ export const App = () => {
   const [customLangMode, setCustomLangMode] = useState(false);
   const [customLangValue, setCustomLangValue] = useState("");
   const [useIcons, setUseIcons] = useState(true);
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const langDropdownRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (window.cep) {
@@ -89,6 +91,20 @@ export const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Закрытие кастомного дропдауна языка по клику снаружи — сам дропдаун
+  // не нативный select (см. комментарий у handleLangPick), поэтому клики
+  // вне него не закрывают его сами по себе.
+  useEffect(() => {
+    if (!langDropdownOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setLangDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [langDropdownOpen]);
+
   const handleCropClick = (key: string, e: React.MouseEvent) => {
     evalTS("cropButtonClick", key, e.ctrlKey, e.altKey);
   };
@@ -105,20 +121,24 @@ export const App = () => {
     evalTS("collectButtonClick", lang, e.ctrlKey);
   };
 
-  const handleLangChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newLang = e.target.value;
-    if (newLang === "CUSTOM") {
+  // Свой (не нативный select) дропдаун языка: клик по строке в
+  // выпадающем списке всегда порождает обычное onClick-событие, даже если
+  // выбранный язык совпадает с уже показанным (например EN сразу после
+  // EN — дефолт при старте панели). Нативный <select> внутри CEP-панели,
+  // встроенной в AE, не давал надёжного onChange на реальный клик мышью в
+  // самой панели (подтверждено: то же действие через удалённый DevTools —
+  // localhost:8860 — срабатывало, а напрямую в AE — нет), поэтому от него
+  // отказались в пользу обычных кликабельных элементов, как у всех
+  // остальных кнопок панели.
+  const handleLangPick = (code: string) => {
+    setLangDropdownOpen(false);
+    if (code === "CUSTOM") {
       setCustomLangValue("");
       setCustomLangMode(true);
       return;
     }
-    // Сбрасываем value сразу — иначе повторный выбор ТОЙ ЖЕ опции (например
-    // EN сразу после EN, а EN — дефолт при старте панели) не порождает у
-    // браузера событие onChange вовсе (значение визуально не меняется), и
-    // действие (ренейм папки/суффикса) просто не срабатывает.
-    setLang("");
-    evalTS("onLanguageChange", newLang, lang, name).then((success) => {
-      setLang(success ? newLang : lang);
+    evalTS("onLanguageChange", code, lang, name).then((success) => {
+      if (success) setLang(code);
     });
   };
 
@@ -126,9 +146,8 @@ export const App = () => {
     const code = customLangValue.toUpperCase();
     setCustomLangMode(false);
     if (code.length !== 2) return;
-    setLang("");
     evalTS("onLanguageChange", code, lang, name).then((success) => {
-      setLang(success ? code : lang);
+      if (success) setLang(code);
     });
   };
 
@@ -224,15 +243,33 @@ export const App = () => {
             }}
           />
         ) : (
-          <span className="rrr-lang-select-wrap">
-            <select className="rrr-lang-select" value={lang} onChange={handleLangChange} title="Выделите папку в Project">
-              {LANG_CODES.map((code) => (
-                <option key={code} value={code}>{code}</option>
-              ))}
-              {LANG_CODES.indexOf(lang) === -1 && <option value={lang}>{lang}</option>}
-              <option value="CUSTOM">other</option>
-            </select>
+          <span className="rrr-lang-select-wrap" ref={langDropdownRef}>
+            <button
+              type="button"
+              className="rrr-lang-select rrr-lang-select-btn"
+              title="Выделите папку в Project"
+              onClick={() => setLangDropdownOpen((open) => !open)}
+            >
+              {lang}
+            </button>
             <span className="rrr-lang-select-arrow" />
+            {langDropdownOpen && (
+              <div className="rrr-lang-dropdown">
+                {LANG_CODES.map((code) => (
+                  <div key={code} className="rrr-lang-dropdown-item" onClick={() => handleLangPick(code)}>
+                    {code}
+                  </div>
+                ))}
+                {LANG_CODES.indexOf(lang) === -1 && (
+                  <div className="rrr-lang-dropdown-item" onClick={() => handleLangPick(lang)}>
+                    {lang}
+                  </div>
+                )}
+                <div className="rrr-lang-dropdown-item" onClick={() => handleLangPick("CUSTOM")}>
+                  other
+                </div>
+              </div>
+            )}
           </span>
         )}
 

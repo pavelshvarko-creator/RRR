@@ -70,6 +70,24 @@
   -webkit-appearance: none;
 }
 
+// Кнопка-триггер собственного дропдауна (см. main.tsx) — вместо
+// нативного <select>, у которого внутри CEP-панели, встроенной в AE, не
+// было надёжного onChange на реальный клик мышью (см. комментарий у
+// handleLangPick в main.tsx). Наследует .rrr-lang-select визуально,
+// только нормализует то, что браузер иначе стилизует у <button> сам.
+.rrr-lang-select-btn {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: $panelBlackHover;
+  }
+  &:active {
+    background: $panelBlackActive;
+  }
+}
+
 .rrr-lang-select-arrow {
   position: absolute;
   right: 9px;
@@ -81,6 +99,34 @@
   border-right: 4px solid transparent;
   border-top: 5px solid $font;
   pointer-events: none;
+}
+
+.rrr-lang-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: $panelBlack;
+  border: 1px solid $dark;
+  box-sizing: border-box;
+}
+
+.rrr-lang-dropdown-item {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: $font;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: $panelBlackHover;
+  }
+  &:active {
+    background: $panelBlackActive;
+  }
 }
 
 .rrr-lang-custom-input {
