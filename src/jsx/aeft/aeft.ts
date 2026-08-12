@@ -648,28 +648,63 @@ function processCropResolutionTimeline(key: string) {
   var proj = app.project;
   var active = proj.activeItem;
 
-  if (!(active && active instanceof CompItem && active.selectedLayers.length === 1)) {
-    alert("Выделите один слой на таймлайне (source которого — композиция)!");
+  if (!(active && active instanceof CompItem && active.selectedLayers.length >= 1)) {
+    alert("Выделите один или несколько слоёв на таймлайне (source которых — композиция)!");
     return;
   }
-  var selLayer = active.selectedLayers[0];
-  if (!(selLayer instanceof AVLayer) || !selLayer.source || !(selLayer.source instanceof CompItem)) {
-    alert("Выделенный слой на таймлайне не является композицией.");
-    return;
+
+  // Слои, чей source — композиция. Несколько слоёв с ОДНИМ и тем же
+  // source (например два слоя из одной и той же M1) дублируют её ОДИН
+  // раз — всем таким слоям подставляется один и тот же новый дубликат.
+  // Разные source (M1, M2, ...) дублируются каждый отдельно.
+  var compLayers: AVLayer[] = [];
+  for (var li = 0; li < active.selectedLayers.length; li++) {
+    var l = active.selectedLayers[li];
+    if (l instanceof AVLayer && l.source && l.source instanceof CompItem) compLayers.push(l);
   }
-  var srcComp = selLayer.source;
-  if (srcComp.width === target.w && srcComp.height === target.h) {
-    alert("Эта композиция уже в разрешении " + target.w + "x" + target.h + " — менять нечего.");
+  if (compLayers.length === 0) {
+    alert("Среди выделенных слоёв нет ни одного с source-композицией.");
     return;
   }
 
   app.beginUndoGroup("Resize " + key);
-  unlockAllLayers(srcComp);
-  var newComp = cropResizeComp(srcComp, target.w, target.h);
-  newComp.name = buildTimelineName(srcComp.name, target.w, target.h);
-  applyVersionLabel(newComp);
-  selLayer.replaceSource(newComp, false);
-  alert("✅ Готово!\nСоздана копия \"" + newComp.name + "\" и подставлена в выделенный слой.\nОригинал не изменён.");
+  var newCompsBySourceID: { [id: number]: CompItem } = {};
+  var dupCount = 0;
+  var replacedCount = 0;
+  var skippedAlready = 0;
+
+  for (var i = 0; i < compLayers.length; i++) {
+    var layer = compLayers[i];
+    var srcComp = layer.source as CompItem;
+
+    if (srcComp.width === target.w && srcComp.height === target.h) {
+      skippedAlready++;
+      continue;
+    }
+
+    var newComp = newCompsBySourceID[srcComp.id];
+    if (!newComp) {
+      unlockAllLayers(srcComp);
+      newComp = cropResizeComp(srcComp, target.w, target.h);
+      newComp.name = buildTimelineName(srcComp.name, target.w, target.h);
+      applyVersionLabel(newComp);
+      newCompsBySourceID[srcComp.id] = newComp;
+      dupCount++;
+    }
+    layer.replaceSource(newComp, false);
+    replacedCount++;
+  }
+
+  var msg;
+  if (replacedCount > 0) {
+    msg = "✅ Готово!\nСоздано дубликатов: " + dupCount + ".\nЗаменено слоёв: " + replacedCount + ".\nОригиналы не изменены.";
+    if (skippedAlready > 0) {
+      msg += "\n(" + skippedAlready + " слой(ев) пропущено — уже в разрешении " + target.w + "x" + target.h + ".)";
+    }
+  } else {
+    msg = "Все выделенные композиции уже в разрешении " + target.w + "x" + target.h + " — менять нечего.";
+  }
+  alert(msg);
   app.endUndoGroup();
 }
 
