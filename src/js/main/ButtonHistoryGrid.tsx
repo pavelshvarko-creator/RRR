@@ -12,20 +12,14 @@ export const ButtonHistoryGrid = ({ onImport }: { onImport: (entry: ButtonHistor
   const [entries, setEntries] = useState<ButtonHistoryEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Всплывающее окно с описанием/гифкой — не title (тот умеет только текст и
-  // не покажет картинку), а свой position:fixed попап, спозиционированный по
-  // курсору. fixed, а не абсолютно внутри сетки — сама сетка скроллится
-  // (overflow-y: auto), и позиционирование внутри неё обрезало бы попап
-  // границами сетки.
-  // maxRight — правый край самого диалога (.rrr-modal), измеренный в
-  // момент наведения, а не window.innerWidth: у CEP-панели, докнутой уже,
-  // чем её исходный размер, реальный рендер-вьюпорт браузера может
-  // оставаться шире видимой области (та же причина, что и у
-  // "не до конца складывающихся" в столбик кнопок панели) — из-за этого
-  // window.innerWidth даёт значение больше видимого, и попап "улетает"
-  // далеко за пределы того, что пользователь на самом деле видит.
-  // Замеряя сам диалог, а не окно, попап не выйдет за его собственные,
-  // явно заданные границы, даже если общий вьюпорт "врёт".
+  // Попап нужен ТОЛЬКО для гифки — title (родной браузерный тултип) умеет
+  // только текст, картинку не покажет. Но родной title всегда рисуется
+  // самим браузером правильно (белым текстом, точно у курсора) — а наш
+  // самодельный position:fixed попап с ручным позиционированием (см. ниже)
+  // на практике на этой машине "улетал" не туда и был серым. Поэтому для
+  // текста используем обычный title (как у остальных кнопок в этом же
+  // диалоге, например "Выбрать файл") и не пытаемся изобретать замену —
+  // кастомный попап оставляем только там, где без него не обойтись (гифка).
   const [preview, setPreview] = useState<{ x: number; y: number; entry: ButtonHistoryEntry; maxRight?: number } | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -43,7 +37,8 @@ export const ButtonHistoryGrid = ({ onImport }: { onImport: (entry: ButtonHistor
     })();
   }, []);
 
-  const hasPreview = (entry: ButtonHistoryEntry) => !!(entry.description || entry.descriptionGifDataUrl || entry.tooltip);
+  const hasGifPreview = (entry: ButtonHistoryEntry) => !!entry.descriptionGifDataUrl;
+  const nativeTitleFor = (entry: ButtonHistoryEntry) => entry.description || entry.tooltip;
 
   const handleDelete = async (id: string) => {
     setMenuId(null);
@@ -52,7 +47,7 @@ export const ButtonHistoryGrid = ({ onImport }: { onImport: (entry: ButtonHistor
   };
 
   const handleTileHover = (e: React.MouseEvent, entry: ButtonHistoryEntry) => {
-    if (!hasPreview(entry)) return;
+    if (!hasGifPreview(entry)) return;
     const modalRect = gridRef.current?.closest(".rrr-modal")?.getBoundingClientRect();
     setPreview({ x: e.clientX, y: e.clientY, entry, maxRight: modalRect?.right });
   };
@@ -69,6 +64,7 @@ export const ButtonHistoryGrid = ({ onImport }: { onImport: (entry: ButtonHistor
                 type="button"
                 className="rrr-custom-icon-btn"
                 style={{ width: entry.iconWidth }}
+                title={hasGifPreview(entry) ? undefined : nativeTitleFor(entry)}
                 onClick={() => onImport(entry)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -83,6 +79,7 @@ export const ButtonHistoryGrid = ({ onImport }: { onImport: (entry: ButtonHistor
               <button
                 type="button"
                 className="rrr-std-btn"
+                title={hasGifPreview(entry) ? undefined : nativeTitleFor(entry)}
                 onClick={() => onImport(entry)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -117,19 +114,19 @@ export const ButtonHistoryGrid = ({ onImport }: { onImport: (entry: ButtonHistor
 
       {preview &&
         (() => {
-          // Только горизонтальный зажим (попап не должен вылезти за правый
-          // край диалога) — по вертикали панель обычно достаточно высокая,
-          // а сам попап ограничен max-height со скроллом на случай длинного
-          // описания. rightBound — правый край самого .rrr-modal (см.
-          // handleTileHover), а не window.innerWidth.
+          // Сюда попадают только записи с гифкой (см. handleTileHover) —
+          // текстовые подсказки без картинки теперь всегда через родной
+          // title на самой кнопке. Только горизонтальный зажим (попап не
+          // должен вылезти за правый край диалога) — по вертикали панель
+          // обычно достаточно высокая, а сам попап ограничен max-height со
+          // скроллом на случай длинного описания. rightBound — правый край
+          // самого .rrr-modal (см. handleTileHover), а не window.innerWidth.
           const rightBound = preview.maxRight ?? window.innerWidth;
           const left = Math.min(preview.x + 16, Math.max(8, rightBound - PREVIEW_MAX_WIDTH - 8));
-          const showDescription = preview.entry.description || preview.entry.descriptionGifDataUrl;
           return (
             <div className="rrr-button-history-preview" style={{ left, top: preview.y + 12, maxWidth: PREVIEW_MAX_WIDTH }}>
-              {preview.entry.descriptionGifDataUrl && <img src={preview.entry.descriptionGifDataUrl} alt="" />}
+              <img src={preview.entry.descriptionGifDataUrl!} alt="" />
               {preview.entry.description && <div className="rrr-button-history-preview-text">{preview.entry.description}</div>}
-              {!showDescription && <div className="rrr-button-history-preview-text">{preview.entry.tooltip}</div>}
             </div>
           );
         })()}

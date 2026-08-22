@@ -58,6 +58,17 @@ export const App = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // При естественном (компактном, по размеру иконки) размере добавленных
+  // кнопок несколько узких иконок всегда помещаются в один ряд даже там,
+  // где одна обычная 56px-кнопка уже сложена в свой единственный столбец —
+  // так и должно быть в обычном случае (это отдельный, самостоятельно
+  // адаптивный блок). Но при действительно экстремальном сужении (порог
+  // задан явно, а не выведен из общей механики) весь блок добавленных
+  // кнопок принудительно встаёт в один столбец.
+  const NARROW_PANEL_THRESHOLD = 100;
+  const [panelNarrow, setPanelNarrow] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   // null — пока не проверили app.settings (не мигаем диалогом раньше
   // времени); true — имя ещё не сохранено, показываем блокирующий (без
   // клика по фону) диалог первого запуска вместо window.prompt; false —
@@ -137,31 +148,19 @@ export const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Обрезанные кнопки при сужении докнутой панели (проверено удалённым
-  // DevTools — window.innerWidth и layout там ПРАВИЛЬНЫЕ, разметка сама
-  // корректно переносит кнопки в столбик; но то, что реально рисует сама
-  // AE поверх этого правильного layout'а, отставало — старый более
-  // широкий кадр не перерисовывался целиком после живого ресайза дока).
-  // Раз причина — в отрисовке, а не в разметке, лечим форс-репейнтом:
-  // ResizeObserver реагирует на настоящее изменение размера body, и на
-  // каждое такое изменение чуть шевелим opacity (практически незаметно,
-  // 0.999) и возвращаем обратно на следующем кадре — это заставляет
-  // Chromium полностью перекомпоновать/перерисовать слой вместо того,
-  // чтобы оставить старый кадр.
+  // Порог по явному числу пикселей (см. NARROW_PANEL_THRESHOLD выше) —
+  // ResizeObserver следит за настоящей шириной .rrr-panel и переключает
+  // panelNarrow, когда она пересекает порог.
   useEffect(() => {
-    let raf = 0;
-    const nudgeRepaint = () => {
-      document.body.style.opacity = "0.999";
-      raf = requestAnimationFrame(() => {
-        document.body.style.opacity = "";
-      });
-    };
-    const ro = new ResizeObserver(nudgeRepaint);
-    ro.observe(document.documentElement);
-    return () => {
-      ro.disconnect();
-      if (raf) cancelAnimationFrame(raf);
-    };
+    const el = panelRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number") setPanelNarrow(width <= NARROW_PANEL_THRESHOLD);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Закрытие кастомного дропдауна языка по клику снаружи — сам дропдаун
@@ -324,7 +323,7 @@ export const App = () => {
 
   return (
     <div className="app" style={{ backgroundColor: bgColor }}>
-      <div className="rrr-panel">
+      <div className={"rrr-panel" + (panelNarrow ? " rrr-panel--narrow" : "")} ref={panelRef}>
         <IconButton
           base={icon9x16}
           hover={icon9x16Hover}
@@ -453,13 +452,19 @@ export const App = () => {
         )}
 
         <div className="rrr-custom-divider">
-          <div className="rrr-custom-divider-line" />
+          {/* Стрелочка — первой (слева), линия — после (заполняет всё
+              оставшееся место справа). Не наоборот: у правого края узкой
+              панели даже небольшая погрешность между рассчитанной
+              раскладкой и тем, что реально видно на экране, могла подрезать
+              то, что там стоит — а стрелочку (кликабельную, важную) нельзя
+              подрезать, в отличие от чисто декоративной линии. */}
           <button
             type="button"
             className={"rrr-custom-divider-arrow" + (customPanelOpen ? " rrr-custom-divider-arrow--open" : "")}
             title={customPanelOpen ? "Свернуть добавленные кнопки" : "Показать добавленные кнопки"}
             onClick={() => setCustomPanelOpen((open) => !open)}
           />
+          <div className="rrr-custom-divider-line" />
         </div>
 
         {customPanelOpen &&
