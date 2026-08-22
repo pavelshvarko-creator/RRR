@@ -258,6 +258,8 @@ var SETTINGS_SECTION = "RRR_Script";
 var SETTINGS_KEY_LANG = "lang";
 var SETTINGS_KEY_CREATOR = "creator";
 var SETTINGS_KEY_ICON_MODE = "iconMode";
+var SETTINGS_KEY_CUSTOM_BUTTON_ORDER = "customButtonOrder";
+var SETTINGS_KEY_CUSTOM_BUTTONS = "customButtons";
 
 // Тумблер в гайде: показывать кнопки панели как PNG-иконки (по умолчанию)
 // или как стандартные текстовые кнопки (как в старом ScriptUI, если бы
@@ -272,6 +274,80 @@ export function getIconModeSetting(): boolean {
 
 export function setIconModeSetting(useIcons: boolean) {
   app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_ICON_MODE, useIcons ? "1" : "0");
+}
+
+// ====================== БЛОК ПОЛЬЗОВАТЕЛЬСКИХ КНОПОК (кнопка «+») ======================
+// Порядок пользовательских кнопок в аккордеоне и сами их определения —
+// независимые JSON-блобы в app.settings, тем же способом, что и остальные
+// настройки этого блока. Встроенные кнопки сюда не входят — их порядок
+// фиксирован в самом JSX главной панели.
+
+export function getCustomButtonOrder(): string {
+  if (app.settings.haveSetting(SETTINGS_SECTION, SETTINGS_KEY_CUSTOM_BUTTON_ORDER)) {
+    return app.settings.getSetting(SETTINGS_SECTION, SETTINGS_KEY_CUSTOM_BUTTON_ORDER);
+  }
+  return "";
+}
+
+export function saveCustomButtonOrder(orderJson: string) {
+  app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_CUSTOM_BUTTON_ORDER, orderJson);
+}
+
+export function getCustomButtons(): string {
+  if (app.settings.haveSetting(SETTINGS_SECTION, SETTINGS_KEY_CUSTOM_BUTTONS)) {
+    return app.settings.getSetting(SETTINGS_SECTION, SETTINGS_KEY_CUSTOM_BUTTONS);
+  }
+  return "";
+}
+
+export function saveCustomButtons(buttonsJson: string) {
+  app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_CUSTOM_BUTTONS, buttonsJson);
+}
+
+// Применяет код выражения к КАЖДОМУ выделенному свойству активной композиции.
+// selectedProperties существует только у CompItem — на другом активном
+// итеме (или без выделенных свойств) явно сообщаем, а не падаем молча.
+export function applyExpressionToSelected(code: string): { ok: boolean; appliedCount: number; message?: string } {
+  var comp = app.project ? app.project.activeItem : null;
+  if (!(comp instanceof CompItem)) {
+    return { ok: false, appliedCount: 0, message: "Нет активной композиции — откройте композицию на Timeline." };
+  }
+  var props = comp.selectedProperties;
+  if (!props || props.length === 0) {
+    return { ok: false, appliedCount: 0, message: "Не выделено ни одного свойства на Timeline." };
+  }
+  var applied = 0;
+  app.beginUndoGroup("Применить выражение (кастомная кнопка)");
+  try {
+    for (var i = 0; i < props.length; i++) {
+      try {
+        var prop = props[i];
+        if (prop.canSetExpression) { prop.expression = code; applied++; }
+      } catch (_) {}
+    }
+  } finally {
+    app.endUndoGroup();
+  }
+  if (applied === 0) return { ok: false, appliedCount: 0, message: "Ни одно из выделенных свойств не поддерживает выражения." };
+  return { ok: true, appliedCount: applied };
+}
+
+// Выбор .exe для кнопки типа "программа" — родной диалог ExtendScript
+// (надёжнее, чем полагаться на File.path у HTML input внутри CEP).
+// Фильтр "Все файлы" — не ограничиваем *.exe: на рабочем столе и в других
+// папках у пользователя полно ярлыков (.lnk) и прочего, что тоже должно
+// быть выбираемым (иконка тянется одинаково и для .exe, и для .lnk).
+export function pickExecutableFile(): string {
+  var f = File.openDialog("Выберите программу или ярлык", "Все файлы:*.*", false);
+  return f ? f.fsName : "";
+}
+
+// Выбор папки для кнопки типа "открыть папку" — родной диалог ExtendScript
+// (Folder.selectDialog), по тем же причинам, что и у pickExecutableFile:
+// надёжный абсолютный путь, а не догадки о File.path у HTML input в CEP.
+export function pickFolder(): string {
+  var f = Folder.selectDialog("Выберите папку");
+  return f ? f.fsName : "";
 }
 
 // При каждом новом запуске язык всегда начинается с EN. Name запоминается между запусками.
@@ -289,6 +365,12 @@ function saveLangCreatorSettings(lang: string, creator: string) {
 
 export function saveCreatorName(name: string, lang: string) {
   saveLangCreatorSettings(lang, name);
+}
+
+// Для окна гайда, где нет доступа к текущему lang основной панели (и он там
+// не нужен) — сохраняет только ник, не трогая SETTINGS_KEY_LANG.
+export function saveCreatorNameOnly(name: string) {
+  app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_CREATOR, name);
 }
 
 // Выбор нового языка в дропдауне: дублирует выделенную (двубуквенную) папку под новый язык.
@@ -532,31 +614,6 @@ function renameOrVersionCompCore(sourceComp: CompItem, key: string) {
   }
 }
 
-// Одиночная композиция — своя undo-группа.
-function renameOrVersionComp(sourceComp: CompItem, key: string) {
-  app.beginUndoGroup("Rename/Version " + key);
-  try {
-    renameOrVersionCompCore(sourceComp, key);
-  } finally {
-    app.endUndoGroup();
-  }
-}
-
-// Массовое переименование/версия: несколько выделенных композиций одного
-// разрешения обрабатываются каждая по своим собственным версии/языку (из
-// собственной иерархии папок), но всё — в ОДНОЙ undo-группе, чтобы один
-// Ctrl+Z отменял всю пачку целиком.
-function renameOrVersionComps(comps: CompItem[], key: string) {
-  app.beginUndoGroup("Rename/Version " + key + " (Batch)");
-  try {
-    for (var i = 0; i < comps.length; i++) {
-      renameOrVersionCompCore(comps[i], key);
-    }
-  } finally {
-    app.endUndoGroup();
-  }
-}
-
 // Дублирует композицию и обрезает/дополняет со всех сторон до targetW x
 // targetH, сохраняя положение всех слоёв относительно ЦЕНТРА кадра (не
 // только по высоте, как раньше, — 16:9 меняет ещё и ширину, в отличие от
@@ -594,51 +651,64 @@ function unlockAllLayers(comp: CompItem) {
   }
 }
 
-// Клик (без модификаторов) на 9:16 / 4:3 / 1:1: работаем ТОЛЬКО с выделением
-// в панели Project — дублируем, кропаем, переименовываем по формуле V?__WxH.
+// Дублирует, кропает и переименовывает ОДНУ композицию — без своей undo-
+// группы (её открывает processCropResolutionProject один раз на весь пакет
+// выделенных композиций, чтобы Ctrl+Z отменял весь клик целиком).
+function cropResizeCompCore(sourceComp: CompItem, key: string): CompItem {
+  var target = RESOLUTIONS[key];
+  var version = getVersionFromName(sourceComp.name);
+  var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
+  unlockAllLayers(sourceComp);
+  var newComp = cropResizeComp(sourceComp, target.w, target.h);
+  newComp.name = buildProjectName(version, target.w, target.h) + "_" + lang;
+  applyVersionLabel(newComp);
+  newComp.openInViewer();
+  return newComp;
+}
+
+// Клик (без модификаторов) на 9:16 / 4:3 / 1:1 / 16:9: работаем со ВСЕМ
+// выделением в панели Project, а не только с первой композицией — каждая
+// выделенная композиция обрабатывается своим путём (переименование/версия,
+// если разрешение уже совпадает с целевым, иначе кроп-ресайз), но всё в
+// ОДНОЙ undo-группе на весь клик, чтобы один Ctrl+Z отменял весь пакет.
 function processCropResolutionProject(key: string) {
   var target = RESOLUTIONS[key];
   var proj = app.project;
 
-  // Среди выделения отдельно собираем ВСЕ композиции, чьё разрешение уже
-  // совпадает с целевым (для массового переименования/версии), и отдельно
-  // запоминаем первую композицию другого разрешения (для обычного кропа).
+  // Среди выделения отдельно собираем композиции, чьё разрешение уже
+  // совпадает с целевым (переименование/новая версия), и отдельно все
+  // остальные (кроп-ресайз) — обе группы обрабатываются целиком.
   var selection = proj.selection;
   var matchingComps: CompItem[] = [];
-  var sourceComp: CompItem | null = null;
+  var otherComps: CompItem[] = [];
   for (var i = 0; i < selection.length; i++) {
     if (selection[i] instanceof CompItem) {
       var selComp = selection[i] as CompItem;
       if (selComp.width === target.w && selComp.height === target.h) {
         matchingComps.push(selComp);
-      } else if (!sourceComp) {
-        sourceComp = selComp;
+      } else {
+        otherComps.push(selComp);
       }
     }
   }
 
-  // Разрешение выделенной(ых) композиции(й) уже совпадает с целевым — вместо
-  // кропа переименовываем по формуле V?__WxH_LANG или создаём новую версию
-  // (см. renameOrVersionComp/renameOrVersionComps) для каждой из них.
-  if (matchingComps.length > 0) {
-    renameOrVersionComps(matchingComps, key);
-    return;
-  }
-
-  if (!sourceComp) {
+  if (matchingComps.length === 0 && otherComps.length === 0) {
     alert("Выделите композицию в панели Project!");
     return;
   }
 
-  var version = getVersionFromName(sourceComp.name);
-  var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
-  app.beginUndoGroup("Resize " + key);
-  unlockAllLayers(sourceComp);
-  var newComp2 = cropResizeComp(sourceComp, target.w, target.h);
-  newComp2.name = buildProjectName(version, target.w, target.h) + "_" + lang;
-  applyVersionLabel(newComp2);
-  newComp2.openInViewer();
-  app.endUndoGroup();
+  var isBatch = matchingComps.length + otherComps.length > 1;
+  app.beginUndoGroup("Resize " + key + (isBatch ? " (Batch)" : ""));
+  try {
+    for (var m = 0; m < matchingComps.length; m++) {
+      renameOrVersionCompCore(matchingComps[m], key);
+    }
+    for (var n = 0; n < otherComps.length; n++) {
+      cropResizeCompCore(otherComps[n], key);
+    }
+  } finally {
+    app.endUndoGroup();
+  }
 }
 
 // Ctrl+Click на 9:16 / 4:3 / 1:1: работаем ТОЛЬКО с выделенным слоем
@@ -667,45 +737,50 @@ function processCropResolutionTimeline(key: string) {
     return;
   }
 
-  app.beginUndoGroup("Resize " + key);
-  var newCompsBySourceID: { [id: number]: CompItem } = {};
-  var dupCount = 0;
-  var replacedCount = 0;
-  var skippedAlready = 0;
+  var isBatch = compLayers.length > 1;
+  app.beginUndoGroup("Resize " + key + (isBatch ? " (Batch)" : ""));
+  try {
+    var newCompsBySourceID: { [id: number]: CompItem } = {};
+    var replacedNames: string[] = [];
+    var skippedSameRes: string[] = [];
 
-  for (var i = 0; i < compLayers.length; i++) {
-    var layer = compLayers[i];
-    var srcComp = layer.source as CompItem;
+    for (var i = 0; i < compLayers.length; i++) {
+      var layer = compLayers[i];
+      var srcComp = layer.source as CompItem;
 
-    if (srcComp.width === target.w && srcComp.height === target.h) {
-      skippedAlready++;
-      continue;
+      if (srcComp.width === target.w && srcComp.height === target.h) {
+        if (indexOfStr(skippedSameRes, srcComp.name) === -1) skippedSameRes.push(srcComp.name);
+        continue;
+      }
+
+      var newComp = newCompsBySourceID[srcComp.id];
+      if (!newComp) {
+        unlockAllLayers(srcComp);
+        newComp = cropResizeComp(srcComp, target.w, target.h);
+        newComp.name = buildTimelineName(srcComp.name, target.w, target.h);
+        applyVersionLabel(newComp);
+        newCompsBySourceID[srcComp.id] = newComp;
+        replacedNames.push(newComp.name);
+      }
+      layer.replaceSource(newComp, false);
     }
 
-    var newComp = newCompsBySourceID[srcComp.id];
-    if (!newComp) {
-      unlockAllLayers(srcComp);
-      newComp = cropResizeComp(srcComp, target.w, target.h);
-      newComp.name = buildTimelineName(srcComp.name, target.w, target.h);
-      applyVersionLabel(newComp);
-      newCompsBySourceID[srcComp.id] = newComp;
-      dupCount++;
+    var msg = "";
+    if (replacedNames.length > 0) {
+      msg = "✅ Готово!\nЗаменено на слоях (" + replacedNames.length + "): " + replacedNames.join(", ") + ".\nОригиналы не изменены.";
     }
-    layer.replaceSource(newComp, false);
-    replacedCount++;
+    if (skippedSameRes.length > 0) {
+      msg += (msg ? "\n\n" : "") + "Уже в разрешении " + target.w + "x" + target.h + " — пропущено: " + skippedSameRes.join(", ") + ".";
+    }
+    alert(msg || "Нечего было менять.");
+  } finally {
+    app.endUndoGroup();
   }
+}
 
-  var msg;
-  if (replacedCount > 0) {
-    msg = "✅ Готово!\nСоздано дубликатов: " + dupCount + ".\nЗаменено слоёв: " + replacedCount + ".\nОригиналы не изменены.";
-    if (skippedAlready > 0) {
-      msg += "\n(" + skippedAlready + " слой(ев) пропущено — уже в разрешении " + target.w + "x" + target.h + ".)";
-    }
-  } else {
-    msg = "Все выделенные композиции уже в разрешении " + target.w + "x" + target.h + " — менять нечего.";
-  }
-  alert(msg);
-  app.endUndoGroup();
+function indexOfStr(arr: string[], value: string): number {
+  for (var i = 0; i < arr.length; i++) if (arr[i] === value) return i;
+  return -1;
 }
 
 // Специальная механика (16:9, 1:1): работает только с исходником 1080x1350 (4:3).
@@ -733,6 +808,11 @@ var SPECIAL_BUILD_LABELS: { [k: string]: string } = { "16x9": "16:9", "1x1": "1:
 
 // Клик (без модификаторов) на 1:1 / 16:9: работаем ТОЛЬКО с выделением
 // в панели Project — билдим блюр-фон композицию из исходника 1080x1350.
+// Alt+Click на 1:1 / 16:9: работаем со ВСЕМ выделением в панели Project, а
+// не только с первой подходящей композицией — билдим блюр-фон композицию из
+// КАЖДОГО исходника 1080x1350 в выделении, плюс переименование/версия для
+// композиций, уже имеющих целевое разрешение, всё в одной undo-группе на
+// клик (как и обычный ресайз-клик без модификаторов).
 function processSpecialBuildProject(targetKey: string) {
   var proj = app.project;
   var target = RESOLUTIONS[targetKey];
@@ -740,41 +820,43 @@ function processSpecialBuildProject(targetKey: string) {
 
   var selection = proj.selection;
   var matchingComps: CompItem[] = [];
-  var sourceComp: CompItem | null = null;
+  var sourceComps: CompItem[] = [];
   for (var i = 0; i < selection.length; i++) {
     if (selection[i] instanceof CompItem) {
       var selComp = selection[i] as CompItem;
       if (selComp.width === target.w && selComp.height === target.h) {
         matchingComps.push(selComp);
-      } else if (!sourceComp) {
-        sourceComp = selComp;
+      } else if (selComp.width === 1080 && selComp.height === 1350) {
+        sourceComps.push(selComp);
       }
     }
   }
 
-  if (matchingComps.length > 0) {
-    renameOrVersionComps(matchingComps, targetKey);
+  if (matchingComps.length === 0 && sourceComps.length === 0) {
+    alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3) или уже готовой " + target.w + "x" + target.h + ". Выделите подходящую композицию в панели Project.");
     return;
   }
 
-  if (!sourceComp) {
-    alert("Выделите композицию 1080x1350 (4:3) в панели Project!");
-    return;
+  var isBatch = matchingComps.length + sourceComps.length > 1;
+  app.beginUndoGroup("Special Build " + label + (isBatch ? " (Batch)" : ""));
+  try {
+    for (var m = 0; m < matchingComps.length; m++) {
+      renameOrVersionCompCore(matchingComps[m], targetKey);
+    }
+    for (var s = 0; s < sourceComps.length; s++) {
+      var sourceComp = sourceComps[s];
+      var version = getVersionFromName(sourceComp.name);
+      var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
+      unlockAllLayers(sourceComp);
+      var newName = buildProjectName(version, target.w, target.h) + "_" + lang;
+      var newComp = buildSpecialBuildComp(sourceComp, newName, targetKey);
+      newComp.parentFolder = sourceComp.parentFolder;
+      applyVersionLabel(newComp);
+      newComp.openInViewer();
+    }
+  } finally {
+    app.endUndoGroup();
   }
-  if (!(sourceComp.width === 1080 && sourceComp.height === 1350)) {
-    alert("Кнопка " + label + " работает только с композицией 1080x1350 (4:3). Выделите композицию с этим разрешением.");
-    return;
-  }
-  var version = getVersionFromName(sourceComp.name);
-  var lang = getLanguageFromFolderHierarchy(sourceComp.parentFolder);
-  app.beginUndoGroup("Special Build " + label);
-  unlockAllLayers(sourceComp);
-  var newName2 = buildProjectName(version, target.w, target.h) + "_" + lang;
-  var newComp2 = buildSpecialBuildComp(sourceComp, newName2, targetKey);
-  newComp2.parentFolder = sourceComp.parentFolder;
-  applyVersionLabel(newComp2);
-  newComp2.openInViewer();
-  app.endUndoGroup();
 }
 
 // Alt+Click на 9:16: создаёт пустую референсную композицию 1080x1920 с гайд-слоем
@@ -968,6 +1050,7 @@ function applyControllers() {
   // (без parent) слой внутри прекомпа, имя контроллера — по имени слоя.
   // Position — аддитивный офсет, Scale — множитель (100 = без изменений).
   var count = 0;
+  var skipped: string[] = [];
   for (var i = 1; i <= innerComp.numLayers; i++) {
     var layer = innerComp.layer(i);
     if (layer instanceof CameraLayer || layer instanceof LightLayer) continue;
@@ -979,22 +1062,40 @@ function applyControllers() {
     var scl = transform.property("ADBE Scale");
     if (!pos || !scl) continue;
 
-    var layerLabel = layer.name;
-    var posCtrlName = layerLabel + "_Position";
-    var sclCtrlName = layerLabel + "_Scale";
-    getOrAddEffect(selectedLayerOnTimeline, "ADBE Point Control", posCtrlName, [0, 0]);
-    getOrAddEffect(selectedLayerOnTimeline, "ADBE Slider Control", sclCtrlName, 100);
+    // Один проблемный слой (см. попытку/перехват ниже) не должен обрывать
+    // обработку остальных непривязанных слоёв в этом же прекомпе.
+    try {
+      var layerLabel = layer.name;
+      var posCtrlName = layerLabel + "_Position";
+      var sclCtrlName = layerLabel + "_Scale";
+      getOrAddEffect(selectedLayerOnTimeline, "ADBE Point Control", posCtrlName, [0, 0]);
+      getOrAddEffect(selectedLayerOnTimeline, "ADBE Slider Control", sclCtrlName, 100);
 
-    var posExpr = 'var p = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("' + escName(posCtrlName) + '")("Point");\n' +
-      'value + (value.length==3 ? [p[0], p[1], 0] : p);';
-    var sclExpr = 'var s = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("' + escName(sclCtrlName) + '")("Slider")/100;\n' +
-      'value * s;';
-    pos.expression = posExpr;
-    scl.expression = sclExpr;
-    count++;
+      var posExpr = 'var p = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("' + escName(posCtrlName) + '")("Point");\n' +
+        'value + (value.length==3 ? [p[0], p[1], 0] : p);';
+      var sclExpr = 'var s = comp("' + escName(outerComp.name) + '").layer(' + outerLayerIndex + ').effect("' + escName(sclCtrlName) + '")("Slider")/100;\n' +
+        'value * s;';
+      // "Separate Dimensions" (ПКМ по Position/Scale в таймлайне) прячет саму
+      // комбинированную многомерную property — AE.expression на ней падает с
+      // "Can not 'set expression' with this property, because the property or
+      // a parent property is hidden". Возвращаем обратно к обычному виду —
+      // значения/ключи при этом не теряются, это стандартное поведение самого
+      // AE при переключении этой опции туда и обратно.
+      if (pos.dimensionsSeparated) pos.dimensionsSeparated = false;
+      if (scl.dimensionsSeparated) scl.dimensionsSeparated = false;
+      pos.expression = posExpr;
+      scl.expression = sclExpr;
+      count++;
+    } catch (e: any) {
+      skipped.push(layer.name + " (" + (e?.message || String(e)) + ")");
+    }
   }
 
-  alert("Done!\nReplaced with clean source & Controllers added.\n" + count + " unparented layer(s) got their own Position/Scale controllers.");
+  var doneMessage = "Done!\nReplaced with clean source & Controllers added.\n" + count + " unparented layer(s) got their own Position/Scale controllers.";
+  if (skipped.length > 0) {
+    doneMessage += "\n\nПропущено (" + skipped.length + "): " + skipped.join("; ");
+  }
+  alert(doneMessage);
 }
 
 // === ЭКСПОРТ ПАРАМЕТРОВ СО КЛЮЧАМИ В ESSENTIAL GRAPHICS ===
@@ -1171,7 +1272,58 @@ export function ctrlButtonClick(ctrlKey: boolean) {
   }
 }
 
-export function renderButtonClick(lang: string, creatorName: string) {
+// Шаблон Output Module (H.264/.mov/.mp4/... — какой пользователь сам выберет
+// при первом рендере) — имя сохраняется в app.settings, то есть в настройках
+// самого AE, а не в файлах расширения: переживает любое обновление/
+// переустановку расширения без повторного вопроса.
+var SETTINGS_KEY_OUTPUT_TEMPLATE = "outputModuleTemplate";
+
+export function getSavedOutputModuleTemplate(): string {
+  if (app.settings.haveSetting(SETTINGS_SECTION, SETTINGS_KEY_OUTPUT_TEMPLATE)) {
+    return app.settings.getSetting(SETTINGS_SECTION, SETTINGS_KEY_OUTPUT_TEMPLATE);
+  }
+  return "";
+}
+
+function saveOutputModuleTemplate(name: string) {
+  app.settings.saveSetting(SETTINGS_SECTION, SETTINGS_KEY_OUTPUT_TEMPLATE, name);
+}
+
+// ScriptUI-диалог со списком уже существующих у пользователя Output Module
+// templates (то, что он сам сохранял через Output Module Settings → Make
+// Template в самом AE) — показывается ОДИН раз, при первом клике на render,
+// пока выбор ещё не сохранён в настройках. Дальше применяется без вопросов.
+function pickOutputModuleTemplate(templates: string[]): string {
+  if (templates.length === 0) {
+    alert(
+      "В After Effects не сохранено ни одного шаблона Output Module.\n" +
+      "Создайте хотя бы один (Output Module Settings → Make Template) и повторите рендер."
+    );
+    return "";
+  }
+  var win = new Window("dialog", "Шаблон для рендера");
+  win.orientation = "column";
+  win.alignChildren = "fill";
+  win.add("statictext", undefined, "Выберите пресет (Output Module Template).");
+  win.add("statictext", undefined, "Он останется дефолтным для всех будущих рендеров.");
+  var dropdown = win.add("dropdownlist", undefined, templates);
+  dropdown.selection = 0;
+  var buttons = win.add("group");
+  buttons.alignment = "right";
+  var cancelBtn = buttons.add("button", undefined, "Отмена", { name: "cancel" });
+  var okBtn = buttons.add("button", undefined, "OK", { name: "ok" });
+  var result = "";
+  okBtn.onClick = function () {
+    result = dropdown.selection ? String(dropdown.selection.text) : "";
+    win.close(1);
+  };
+  cancelBtn.onClick = function () { win.close(0); };
+  win.center();
+  win.show();
+  return result;
+}
+
+export function renderButtonClick(lang: string, creatorName: string, sendToAME?: boolean) {
   // Все проверки — ДО beginUndoGroup, чтобы ранний return никогда
   // не оставлял незакрытую undo-группу (это ломало повторные клики).
   var proj = app.project;
@@ -1180,6 +1332,21 @@ export function renderButtonClick(lang: string, creatorName: string) {
   if (selectedItems.length === 0) { alert("Выделите хотя бы одну композицию или папку с композициями."); return; }
   var compsToRender = getCompsFromSelection(selectedItems);
   if (compsToRender.length === 0) { alert("В выделении нет ни одной композиции."); return; }
+
+  // Выбор шаблона — ДО undo-группы и ДО добавления настоящих render items,
+  // чтобы отмена выбора не оставляла частично настроенный рендер. Пробный
+  // render item добавляется и тут же убирается — нужен только чтобы
+  // прочитать список templates (это свойство самого OutputModule).
+  var savedTemplate = getSavedOutputModuleTemplate();
+  if (!savedTemplate) {
+    var probeItem = app.project.renderQueue.items.add(compsToRender[0]);
+    var availableTemplates = probeItem.outputModule(1).templates;
+    probeItem.remove();
+    var chosen = pickOutputModuleTemplate(availableTemplates);
+    if (!chosen) return;
+    saveOutputModuleTemplate(chosen);
+    savedTemplate = chosen;
+  }
 
   app.beginUndoGroup("Smart Render");
   try {
@@ -1221,13 +1388,40 @@ export function renderButtonClick(lang: string, creatorName: string) {
       var resFolder = new Folder(langBaseFolder.fsName + "/" + resolutionFolderName);
       if (!resFolder.exists) resFolder.create();
       var safeFileName = projectName + "_video_" + version + "__" + resolutionFolderName + "_" + durationSec + "s_" + langCode + "_" + creator;
-      var outputPath = resFolder.fsName + "/" + safeFileName + ".mov";
       try {
         var rqItem = app.project.renderQueue.items.add(comp);
-        rqItem.outputModule(1).file = new File(outputPath);
+        var om = rqItem.outputModule(1);
+        om.applyTemplate(savedTemplate);
+
+        // Расширение файла — из того, что сам шаблон только что выставил
+        // (разные шаблоны дают разные контейнеры: .mp4/.mov/...), а не
+        // жёстко зашитое — иначе имя файла разойдётся с реальным форматом.
+        var ext = ".mov";
+        try {
+          var curName = om.file.name;
+          var dotIdx = curName.lastIndexOf(".");
+          if (dotIdx !== -1) ext = curName.slice(dotIdx);
+        } catch (_) {}
+
+        om.file = new File(resFolder.fsName + "/" + safeFileName + ext);
       } catch (err: any) { alert("Ошибка: " + comp.name + "\n" + err.message); }
     }
-    alert("✅ Композиции добавлены в очередь рендера.");
+
+    // Ctrl+Click — "Queue In AME": те же render-queue items, что уже
+    // собраны выше (с уже применённым шаблоном/путём файла), передаются в
+    // Adobe Media Encoder. false — только поставить в очередь AME, не
+    // запускать рендер в нём автоматически (пользователь сам решает, когда
+    // нажать Render там).
+    if (sendToAME) {
+      if (app.project.renderQueue.canQueueInAME) {
+        app.project.renderQueue.queueInAME(false);
+        alert("✅ Композиции отправлены в очередь Adobe Media Encoder.");
+      } else {
+        alert("Adobe Media Encoder недоступен. Композиции остались в очереди рендера After Effects.");
+      }
+    } else {
+      alert("✅ Композиции добавлены в очередь рендера.");
+    }
   } catch (renderErr: any) {
     alert("Error: " + renderErr.toString());
   } finally {

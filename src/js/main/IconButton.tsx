@@ -10,17 +10,18 @@ type IconButtonProps = {
   label: string;
   useIcons: boolean;
   title?: string;
+  disabled?: boolean;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
-export const IconButton = ({ base, hover, pressed, label, useIcons, title, onClick }: IconButtonProps) => {
+export const IconButton = ({ base, hover, pressed, label, useIcons, title, disabled, onClick }: IconButtonProps) => {
   const [src, setSrc] = useState(base);
 
   // Тумблер в гайде: стандартная текстовая кнопка вместо PNG-иконки — как в
   // старом ScriptUI-скрипте, если бы файл иконки не был найден.
   if (!useIcons) {
     return (
-      <button className="rrr-std-btn" title={title} onClick={onClick}>
+      <button className="rrr-std-btn" title={title} disabled={disabled} onClick={onClick}>
         {label}
       </button>
     );
@@ -30,13 +31,14 @@ export const IconButton = ({ base, hover, pressed, label, useIcons, title, onCli
     <button
       className="rrr-icon-btn"
       title={title}
+      disabled={disabled}
       onClick={onClick}
-      onMouseEnter={() => setSrc(hover)}
+      onMouseEnter={() => !disabled && setSrc(hover)}
       onMouseLeave={() => setSrc(base)}
-      onMouseDown={() => setSrc(pressed)}
-      onMouseUp={() => setSrc(hover)}
+      onMouseDown={() => !disabled && setSrc(pressed)}
+      onMouseUp={() => !disabled && setSrc(hover)}
     >
-      <img src={src} />
+      <img src={src} style={disabled ? { opacity: 0.4 } : undefined} />
     </button>
   );
 };

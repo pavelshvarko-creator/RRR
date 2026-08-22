@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { csi, subscribeBackgroundColor, evalTS } from "../lib/utils/bolt";
 import { ns } from "../../shared/shared";
 import { IconButton } from "./IconButton";
+import { ButtonSlot } from "./ButtonSlot";
+import { CustomButtonView } from "./CustomButtonView";
+import { AddButtonDialog } from "./AddButtonDialog";
+import { runCustomButtonAction } from "../lib/buttons/runAction";
+import { publishButtonToHistory } from "../lib/buttons/history";
+import type { CustomButtonDef, ButtonHistoryEntry } from "../../shared/customButtons";
 import "./main.scss";
 
 import icon9x16 from "../assets/RRR/9x16.png";
@@ -25,6 +31,9 @@ import iconRenderPressed from "../assets/RRR/Render_2.png";
 import iconCollect from "../assets/RRR/Collect.png";
 import iconCollectHover from "../assets/RRR/Collect_1.png";
 import iconCollectPressed from "../assets/RRR/Collect_2.png";
+import iconPlus from "../assets/RRR/+.png";
+import iconPlusHover from "../assets/RRR/+_1.png";
+import iconPlusPressed from "../assets/RRR/+_2.png";
 
 const LANG_CODES = ["EN", "AR", "DA", "DE", "ES", "FI", "FR", "IT", "JA", "KO", "NL", "SV", "TH"];
 
@@ -38,29 +47,66 @@ export const App = () => {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const langDropdownRef = useRef<HTMLSpanElement>(null);
 
+  // Пользовательские кнопки (кнопка «+»): порядок в аккордеоне + сами
+  // определения — персистятся отдельно (тот же принцип, что и для
+  // остальных настроек панели). customPanelOpen не персистится — аккордеон
+  // всегда стартует свёрнутым при открытии панели.
+  const [customButtonOrder, setCustomButtonOrder] = useState<string[]>([]);
+  const [customButtons, setCustomButtons] = useState<Record<string, CustomButtonDef>>({});
+  const [customButtonsLoaded, setCustomButtonsLoaded] = useState(false);
+  const [customPanelOpen, setCustomPanelOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // null — пока не проверили app.settings (не мигаем диалогом раньше
+  // времени); true — имя ещё не сохранено, показываем блокирующий (без
+  // клика по фону) диалог первого запуска вместо window.prompt; false —
+  // имя уже есть, диалог не нужен.
+  const [nameSetupNeeded, setNameSetupNeeded] = useState<boolean | null>(null);
+  const [nameSetupValue, setNameSetupValue] = useState("");
+
   useEffect(() => {
     if (window.cep) {
       subscribeBackgroundColor(setBgColor);
     }
     // Поле Name в интерфейсе не показываем — имя один раз запрашивается при
     // первом запуске панели (если ещё не сохранено) и дальше используется
-    // молча из app.settings. Возможности изменить его позже нет.
+    // молча из app.settings. Раньше это был блокирующий window.prompt прямо
+    // при монтировании; теперь — неблокирующий флаг и свой диалог (см.
+    // NameSetupDialog ниже), чтобы панель успевала нормально отрисоваться
+    // независимо от того, ответит ли пользователь на запрос сразу.
     evalTS("getSavedCreatorName").then((saved) => {
       if (saved) {
         setName(saved);
+        setNameSetupNeeded(false);
         return;
       }
-      var entered = window.prompt("Введите ваше имя (для имени файлов рендера):");
-      if (entered) {
-        setName(entered);
-        evalTS("saveCreatorName", entered, lang);
-      }
+      setNameSetupNeeded(true);
     });
 
     // Тумблер "иконки / стандартные кнопки" переключается в гайде, но
     // применяется здесь, в основной панели — читаем сохранённое значение
     // при каждом открытии панели.
     evalTS("getIconModeSetting").then((saved) => setUseIcons(saved !== false));
+
+    // Пользовательские кнопки — порядок и определения из app.settings; при
+    // отсутствии/повреждении сохранённого JSON тихо откатываемся к дефолту
+    // (пустой аккордеон), не мешая открытию панели.
+    Promise.all([evalTS("getCustomButtonOrder"), evalTS("getCustomButtons")]).then(([orderJson, buttonsJson]) => {
+      try {
+        if (orderJson) {
+          const parsed = JSON.parse(orderJson);
+          if (Array.isArray(parsed)) setCustomButtonOrder(parsed);
+        }
+      } catch (_) {}
+      try {
+        if (buttonsJson) {
+          const parsed = JSON.parse(buttonsJson);
+          if (parsed && typeof parsed === "object") setCustomButtons(parsed);
+        }
+      } catch (_) {}
+      setCustomButtonsLoaded(true);
+    });
 
     // Тихая автопроверка обновлений при каждом запуске панели (AE запущен/
     // перезапущен). Модуль с обновлением подключаем динамически (не в
@@ -91,6 +137,33 @@ export const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Обрезанные кнопки при сужении докнутой панели (проверено удалённым
+  // DevTools — window.innerWidth и layout там ПРАВИЛЬНЫЕ, разметка сама
+  // корректно переносит кнопки в столбик; но то, что реально рисует сама
+  // AE поверх этого правильного layout'а, отставало — старый более
+  // широкий кадр не перерисовывался целиком после живого ресайза дока).
+  // Раз причина — в отрисовке, а не в разметке, лечим форс-репейнтом:
+  // ResizeObserver реагирует на настоящее изменение размера body, и на
+  // каждое такое изменение чуть шевелим opacity (практически незаметно,
+  // 0.999) и возвращаем обратно на следующем кадре — это заставляет
+  // Chromium полностью перекомпоновать/перерисовать слой вместо того,
+  // чтобы оставить старый кадр.
+  useEffect(() => {
+    let raf = 0;
+    const nudgeRepaint = () => {
+      document.body.style.opacity = "0.999";
+      raf = requestAnimationFrame(() => {
+        document.body.style.opacity = "";
+      });
+    };
+    const ro = new ResizeObserver(nudgeRepaint);
+    ro.observe(document.documentElement);
+    return () => {
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   // Закрытие кастомного дропдауна языка по клику снаружи — сам дропдаун
   // не нативный select (см. комментарий у handleLangPick), поэтому клики
   // вне него не закрывают его сами по себе.
@@ -105,6 +178,20 @@ export const App = () => {
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [langDropdownOpen]);
 
+  // Сохраняем порядок/определения пользовательских кнопок при каждом
+  // изменении — но только после того, как первичная загрузка из настроек
+  // уже случилась, иначе пустой дефолт успел бы затереть сохранённое до
+  // того, как оно подгрузится.
+  useEffect(() => {
+    if (!customButtonsLoaded) return;
+    evalTS("saveCustomButtonOrder", JSON.stringify(customButtonOrder));
+  }, [customButtonOrder, customButtonsLoaded]);
+
+  useEffect(() => {
+    if (!customButtonsLoaded) return;
+    evalTS("saveCustomButtons", JSON.stringify(customButtons));
+  }, [customButtons, customButtonsLoaded]);
+
   const handleCropClick = (key: string, e: React.MouseEvent) => {
     evalTS("cropButtonClick", key, e.ctrlKey, e.altKey);
   };
@@ -113,8 +200,13 @@ export const App = () => {
     evalTS("ctrlButtonClick", e.ctrlKey);
   };
 
-  const handleRenderClick = () => {
-    evalTS("renderButtonClick", lang, name);
+  const handleRenderClick = (e: React.MouseEvent) => {
+    // При первом клике renderButtonClick сам покажет ScriptUI-диалог с
+    // выбором Output Module Template из уже существующих у пользователя в
+    // AE — и сохранит выбор навсегда (app.settings), без каких-либо
+    // зашитых в расширение шаблонов. Ctrl+Клик — те же render-queue items
+    // дополнительно отправляются в Adobe Media Encoder (см. renderButtonClick).
+    evalTS("renderButtonClick", lang, name, e.ctrlKey);
   };
 
   const handleCollectClick = (e: React.MouseEvent) => {
@@ -149,6 +241,74 @@ export const App = () => {
     evalTS("onLanguageChange", code, lang, name).then((success) => {
       if (success) setLang(code);
     });
+  };
+
+  // Убрать с панели — НЕ безвозвратное удаление: определение убирается из
+  // аккордеона (customButtonOrder/customButtons), но сама кнопка навсегда
+  // остаётся в локальной истории (она туда публикуется при каждом
+  // сохранении, см. handleSaveCustomButton) — вернуть её на панель можно
+  // оттуда же в один клик. Безвозвратное "Удалить" — только из самой
+  // истории (см. ButtonHistoryGrid).
+  const handleRemoveCustomButton = (id: string) => {
+    setCustomButtonOrder((prev) => prev.filter((existingId) => existingId !== id));
+    setCustomButtons((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const handleEditCustomButton = (id: string) => {
+    setEditingId(id);
+    setDialogOpen(true);
+  };
+
+  // И создание, и редактирование публикуются в локальную историю — она
+  // хранит все версии, ничего не перезаписывая (см. history.ts).
+  const handleSaveCustomButton = (def: CustomButtonDef, isEdit: boolean) => {
+    setCustomButtons((prev) => ({ ...prev, [def.id]: def }));
+    if (!isEdit) setCustomButtonOrder((prev) => [...prev, def.id]);
+    setDialogOpen(false);
+    setEditingId(null);
+
+    const entry: ButtonHistoryEntry = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      tooltip: def.tooltip,
+      description: def.description,
+      descriptionGifDataUrl: def.descriptionGifDataUrl,
+      action: def.action,
+      iconDataUrl: def.iconDataUrl,
+      iconWidth: def.iconWidth,
+      addedAt: Date.now(),
+    };
+    publishButtonToHistory(entry).catch((e: any) => {
+      console.error("Не удалось сохранить кнопку в локальную историю", e);
+    });
+  };
+
+  // Клик по плитке в Истории — независимая копия (свой новый id), чтобы
+  // повторный импорт той же записи истории на панель не путал слоты между
+  // собой (то же самое, с чем свежесозданная кнопка получает id заново).
+  const handleImportFromHistory = (entry: ButtonHistoryEntry) => {
+    const def: CustomButtonDef = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      tooltip: entry.tooltip,
+      description: entry.description,
+      descriptionGifDataUrl: entry.descriptionGifDataUrl,
+      action: entry.action,
+      iconDataUrl: entry.iconDataUrl,
+      iconWidth: entry.iconWidth,
+    };
+    setCustomButtons((prev) => ({ ...prev, [def.id]: def }));
+    setCustomButtonOrder((prev) => [...prev, def.id]);
+  };
+
+  const handleNameSetupSubmit = () => {
+    const entered = nameSetupValue.trim();
+    if (!entered) return;
+    setName(entered);
+    evalTS("saveCreatorName", entered, lang);
+    setNameSetupNeeded(false);
   };
 
   const handleInfoClick = () => {
@@ -217,7 +377,7 @@ export const App = () => {
           pressed={iconCollectPressed}
           label="collect"
           useIcons={useIcons}
-          title="Клик — чистка проекта&#10;Ctrl+Клик — чистка и сборка коллекта"
+          title="Выделите композиции&#10;&#10;Клик — чистка проекта&#10;Ctrl+Клик — чистка и сборка коллекта"
           onClick={handleCollectClick}
         />
         <IconButton
@@ -226,7 +386,18 @@ export const App = () => {
           pressed={iconRenderPressed}
           label="render"
           useIcons={useIcons}
+          title="Клик — рендер в очередь After Effects&#10;Ctrl+Клик — отправка в Adobe Media Encoder"
           onClick={handleRenderClick}
+        />
+
+        <IconButton
+          base={iconPlus}
+          hover={iconPlusHover}
+          pressed={iconPlusPressed}
+          label="+"
+          useIcons={useIcons}
+          title="Добавить кнопку"
+          onClick={() => setDialogOpen(true)}
         />
 
         {customLangMode ? (
@@ -273,12 +444,72 @@ export const App = () => {
           </span>
         )}
 
-        <span className="rrr-info-btn-slot">
-          <button className="rrr-info-btn" title="info" onClick={handleInfoClick}>
-            i
-          </button>
-        </span>
+        {nameSetupNeeded === false && (
+          <span className="rrr-info-btn-slot">
+            <button className="rrr-info-btn" title="info" onClick={handleInfoClick}>
+              i
+            </button>
+          </span>
+        )}
+
+        <div className="rrr-custom-divider">
+          <div className="rrr-custom-divider-line" />
+          <button
+            type="button"
+            className={"rrr-custom-divider-arrow" + (customPanelOpen ? " rrr-custom-divider-arrow--open" : "")}
+            title={customPanelOpen ? "Свернуть добавленные кнопки" : "Показать добавленные кнопки"}
+            onClick={() => setCustomPanelOpen((open) => !open)}
+          />
+        </div>
+
+        {customPanelOpen &&
+          customButtonOrder.map((id) => {
+            const def = customButtons[id];
+            if (!def) return null;
+            return (
+              <ButtonSlot key={id} slotId={id} onRemove={handleRemoveCustomButton} onEdit={handleEditCustomButton}>
+                <CustomButtonView def={def} onRun={runCustomButtonAction} />
+              </ButtonSlot>
+            );
+          })}
       </div>
+
+      {nameSetupNeeded === true && (
+        <div className="rrr-modal-overlay">
+          <div className="rrr-modal">
+            <div className="rrr-modal-title">Первый запуск</div>
+            <label className="rrr-modal-field">
+              Ваше имя (для имени файлов рендера)
+              <input
+                type="text"
+                autoFocus
+                value={nameSetupValue}
+                onChange={(e) => setNameSetupValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleNameSetupSubmit();
+                }}
+              />
+            </label>
+            <div className="rrr-modal-actions">
+              <button className="rrr-std-btn" onClick={handleNameSetupSubmit}>
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dialogOpen && (
+        <AddButtonDialog
+          editingDef={editingId ? customButtons[editingId] : undefined}
+          onClose={() => {
+            setDialogOpen(false);
+            setEditingId(null);
+          }}
+          onSave={handleSaveCustomButton}
+          onImportFromHistory={handleImportFromHistory}
+        />
+      )}
     </div>
   );
 };

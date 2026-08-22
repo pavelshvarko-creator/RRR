@@ -19,6 +19,10 @@
 .rrr-icon-btn {
   width: 56px;
   height: 32px;
+  // flex-shrink: 0 — иначе браузер по умолчанию сжимает кнопки, чтобы
+  // впихнуть больше в строку, вместо того чтобы переносить их на новую
+  // строку целиком (аккуратный "стек" в узкой панели).
+  flex-shrink: 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -37,13 +41,25 @@
 .rrr-std-btn {
   width: 56px;
   height: 32px;
+  flex-shrink: 0;
   padding: 0 4px;
   border: 1px solid $dark;
+  border-radius: 6px;
   background: $panelBlack;
   color: $font;
   font-size: 11px;
   cursor: pointer;
   box-sizing: border-box;
+  // display:flex + text-align:center — у <label> и <button> разное
+  // поведение по умолчанию (inline vs button UA-стили); одинаковый явный
+  // flex-центрирование убирает расхождение в положении второй строки
+  // переносящегося текста между ними (см. AddButtonDialog: "Выбрать файл"
+  // как <label>, "Выбрать иконку" как <button>, один класс на двоих).
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.2;
 
   &:hover {
     background: $panelBlackHover;
@@ -57,6 +73,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 // Тот же вид, что и у превью "EN ▾" в гайде (guide.scss:
@@ -148,6 +165,7 @@
 .rrr-info-btn-slot {
   width: 56px;
   height: 32px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,6 +195,418 @@
   &:active {
     border-color: #fff;
     color: #fff;
+  }
+}
+
+// ====================== КНОПКА «+»: РАЗДЕЛИТЕЛЬ/АККОРДЕОН ======================
+// Свой flex-item внутри .rrr-panel (тот же flex-wrap контейнер, где кнопки
+// уже естественно "переносятся" при изменении ширины панели). flex: 1 1 100%
+// гарантирует, что этот item всегда начинает новую строку целиком и
+// занимает всю её ширину — линия реально "уменьшается/увеличивается" при
+// ресайзе панели вместе со всем остальным, без ResizeObserver/JS.
+.rrr-custom-divider {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.rrr-custom-divider-line {
+  flex: 1;
+  height: 1px;
+  background: $dark;
+}
+
+.rrr-custom-divider-arrow {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    transform: translate(-50%, -60%) rotate(0deg);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid $font;
+    transition: transform 0.15s;
+  }
+
+  &:hover::after {
+    border-top-color: $highlight;
+  }
+
+  &--open::after {
+    transform: translate(-50%, -40%) rotate(180deg);
+  }
+}
+
+// ====================== КНОПКА «+»: ПОЛЬЗОВАТЕЛЬСКИЕ КНОПКИ/ИСТОРИЯ ======================
+
+.rrr-form-status {
+  font-size: 10px;
+  color: $font;
+  margin-top: 2px;
+  opacity: 0.7;
+
+  &--error {
+    color: $error;
+    opacity: 1;
+  }
+}
+
+.rrr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  // flex-start, а не center — окно всегда одного (фиксированного) размера,
+  // независимо от текущей ширины панели; если панель у́же самого окна, оно
+  // просто "прячется" за правый край (как и просили), а не сжимается и не
+  // остаётся видимым центрированным поверх слишком узкой панели.
+  justify-content: flex-start;
+  padding-top: 30px;
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.rrr-modal {
+  width: 320px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: $darker;
+  border: 1px solid $dark;
+  padding: 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+
+  // width: auto на САМОМ окне не подошло (см. ниже) — в реальной
+  // CEP-панели (Chromium другой версии, чем на десктопе) вложенный
+  // flex-column с auto-шириной внутри посчитался не так, как в обычном
+  // браузере, и раскладку сломало. Оставляем окно явным числом, но
+  // .rrr-modal-history ниже теперь сама сжимается под свою сетку —
+  // приблизительный запас (форма 240 + узкая сжатая история) c небольшим
+  // отступом до правого края окна.
+  &--wide {
+    width: 380px;
+  }
+}
+
+.rrr-modal-columns {
+  display: flex;
+  gap: 14px;
+}
+
+.rrr-modal-form {
+  // Фиксированная ширина, а не flex-доля от угаданной общей ширины окна:
+  // как раз хватает для ряда из двух кнопок (Выбрать файл/Выбрать иконку)
+  // и для комфортного ввода кода/expression в textarea, без лишнего
+  // пустого места после короткого ряда кнопок.
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rrr-modal-history {
+  // flex: 0 0 auto — колонка сама сжимается под ширину сетки внутри (см.
+  // .rrr-button-history-grid, у неё 2 max-content столбика), а не тянется
+  // на фиксированный слот шире, чем реально нужно. Это единственный
+  // уровень auto-сайзинга здесь (у родителей выше — явные фиксированные
+  // числа), в отличие от того, что ломалось на самом окне (там auto было
+  // сразу в нескольких вложенных уровнях) — риск куда меньше, но стоит
+  // проверить в самой AE.
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 1px solid $dark;
+  padding-left: 14px;
+}
+
+.rrr-modal-title {
+  color: $font;
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.rrr-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: $font;
+  font-size: 10px;
+
+  input[type="text"],
+  select,
+  textarea {
+    background: $panelBlack;
+    color: $font;
+    border: 1px solid $dark;
+    padding: 4px 6px;
+    font-size: 11px;
+    box-sizing: border-box;
+    font-family: inherit;
+    resize: vertical;
+  }
+}
+
+.rrr-modal-hint {
+  opacity: 0.7;
+}
+
+.rrr-modal-icon-preview {
+  max-height: 32px;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+.rrr-icon-choose-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+
+  .rrr-modal-icon-preview {
+    margin-top: 0;
+  }
+
+  // Пара кнопок-пикеров в одном ряду (Выбрать файл/папку/программу +
+  // Выбрать иконку) — растягиваем обе на равную долю ряда (а не
+  // стандартные 56px), чтобы подпись каждой всегда была в одну строку и
+  // обе были одинаковой ширины друг с другом. Картинка-превью иконки
+  // рядом (если есть) в этот расчёт не входит — у неё свой натуральный
+  // размер (flex-grow не задан).
+  &--split {
+    > .rrr-std-btn {
+      flex: 1;
+    }
+  }
+}
+
+// Одиночная кнопка-пикер без пары в ряду (например "Выбрать программу")
+// — шире стандартных 56px, чтобы подпись помещалась без переноса.
+.rrr-wide-btn {
+  width: auto;
+  padding: 0 16px;
+}
+
+.rrr-icon-picker-overlay {
+  z-index: 1100;
+}
+
+.rrr-icon-picker-modal {
+  width: auto;
+}
+
+.rrr-icon-picker-upload-btn {
+  width: 100%;
+  height: auto;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.rrr-icon-library-grid {
+  display: grid;
+  grid-template-columns: repeat(11, 22px);
+  gap: 1px;
+  margin-top: 4px;
+  padding: 4px;
+  background: $panelBlack;
+  border-radius: 3px;
+}
+
+.rrr-icon-library-item {
+  width: 22px;
+  height: 22px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  &:hover {
+    background: $panelBlackHover;
+  }
+}
+
+.rrr-modal-gif-preview-wrap {
+  position: relative;
+  display: inline-block;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+.rrr-modal-gif-preview {
+  max-width: 120px;
+  max-height: 80px;
+  display: block;
+  border: 1px solid $dark;
+}
+
+.rrr-modal-gif-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: $error;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rrr-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+
+  .rrr-std-btn {
+    width: auto;
+    padding: 4px 12px;
+  }
+}
+
+.rrr-button-slot {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.rrr-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1998;
+}
+
+.rrr-context-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1999;
+  background: $darker;
+  border: 1px solid $dark;
+  min-width: 90px;
+}
+
+.rrr-context-menu-item {
+  padding: 5px 10px;
+  font-size: 10px;
+  color: $font;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: $panelBlackHover;
+    color: $highlight;
+  }
+
+  &--danger:hover {
+    color: $error;
+  }
+}
+
+.rrr-custom-icon-btn {
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+  }
+}
+
+// Сеткой плиток (не списком, как в исходной версии) — каждая плитка того
+// же вида, что обычная кнопка панели.
+.rrr-button-history-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  // Ровно 2 столбика, каждый — своей нужной ширины (max-content), а не
+  // фиксированные 56px-слоты: плитка с квадратной 32×32 иконкой должна
+  // сама быть 32×32 (см. .rrr-custom-icon-btn ниже, ширина через inline
+  // style под iconWidth), а не сидеть в слоте шире, чем она сама, — иначе
+  // соседние плитки не прилегают друг к другу вплотную.
+  grid-template-columns: repeat(2, max-content);
+  gap: 0;
+  margin-top: 4px;
+  align-content: flex-start;
+  // Сама сетка не растягивается на всю ширину колонки истории — только
+  // на то, что реально нужно этим двум столбикам, без пустого места справа.
+  align-self: flex-start;
+}
+
+// position: fixed — не абсолютно внутри плитки: сама сетка истории
+// скроллится (.rrr-button-history-grid, overflow-y: auto), и попап,
+// позиционированный относительно плитки, обрезался бы границами сетки.
+.rrr-button-history-preview {
+  position: fixed;
+  z-index: 4000;
+  background: $darker;
+  border: 1px solid $dark;
+  padding: 6px;
+  box-sizing: border-box;
+  max-height: 220px;
+  overflow-y: auto;
+  pointer-events: none;
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+}
+
+.rrr-button-history-preview-text {
+  color: #fff;
+  font-size: 11px;
+  white-space: pre-wrap;
+  margin-top: 4px;
+
+  img + & {
+    margin-top: 6px;
   }
 }
 
