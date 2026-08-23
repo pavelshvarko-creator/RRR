@@ -173,8 +173,6 @@ function duplicateFolderWithLanguage(sourceFolderItem: FolderItem, newLang: stri
   }
 
   var rootComps = sourceComps.slice(0);
-  var rootCompIDs: { [id: number]: boolean } = {};
-  for (var ri = 0; ri < rootComps.length; ri++) rootCompIDs[rootComps[ri].id] = true;
 
   sourceComps = [];
   for (var rootIndex = 0; rootIndex < rootComps.length; rootIndex++) {
@@ -221,15 +219,15 @@ function duplicateFolderWithLanguage(sourceFolderItem: FolderItem, newLang: stri
     }
   }
 
-  // Дублируем все композиции графа. Корневым (лежащим прямо в языковой папке)
-  // присваиваем суффикс нового языка — например "_ES". Вложенные precomp'ы,
-  // подтянутые как зависимости, имена не меняют.
+  // Дублируем все композиции графа — и корневые (лежащие прямо в языковой
+  // папке), и вложенные precomp'ы, подтянутые как зависимости, — суффикс
+  // нового языка получают ВСЕ (например main -> main_ES), а не только
+  // корневые: иначе дубликат вложенной композиции остаётся тёзкой
+  // оригинала, что путает при работе с проектом напрямую.
   for (var sc = 0; sc < sourceComps.length; sc++) {
     var sourceComp = sourceComps[sc];
     var dupComp = sourceComp.duplicate();
-    dupComp.name = rootCompIDs[sourceComp.id]
-      ? (stripLanguageSuffix(sourceComp.name) + "_" + newLang)
-      : sourceComp.name;
+    dupComp.name = stripLanguageSuffix(sourceComp.name) + "_" + newLang;
     compMap[sourceComp.id] = dupComp;
     // Композиции из EN получают зеркальный путь внутри новой папки.
     // Внешние дочерние композиции, например из Assets/Comps,
