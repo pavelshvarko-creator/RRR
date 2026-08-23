@@ -1405,25 +1405,29 @@ export function renderButtonClick(lang: string, creatorName: string, sendToAME?:
       } catch (err: any) { alert("Ошибка: " + comp.name + "\n" + err.message); }
     }
 
-    // Ctrl+Click — "Queue In AME": те же render-queue items, что уже
-    // собраны выше (с уже применённым шаблоном/путём файла), передаются в
-    // Adobe Media Encoder. false — только поставить в очередь AME, не
-    // запускать рендер в нём автоматически (пользователь сам решает, когда
-    // нажать Render там).
-    if (sendToAME) {
-      if (app.project.renderQueue.canQueueInAME) {
-        app.project.renderQueue.queueInAME(false);
-        alert("✅ Композиции отправлены в очередь Adobe Media Encoder.");
-      } else {
-        alert("Adobe Media Encoder недоступен. Композиции остались в очереди рендера After Effects.");
-      }
-    } else {
-      alert("✅ Композиции добавлены в очередь рендера.");
-    }
   } catch (renderErr: any) {
     alert("Error: " + renderErr.toString());
   } finally {
     app.endUndoGroup();
+  }
+
+  // Ctrl+Click — "Queue In AME": те же render-queue items, что уже собраны
+  // выше (с уже применённым шаблоном/путём файла), передаются в Adobe
+  // Media Encoder. false — только поставить в очередь AME, не запускать
+  // рендер в нём автоматически (пользователь сам решает, когда нажать
+  // Render там). Вызывается ПОСЛЕ закрытия своей undo-группы, а не внутри
+  // неё — queueInAME общается с внешним процессом AME, и вызов её внутри
+  // скриптовой undo-группы вызывал у AE предупреждение "Undo group
+  // mismatch, will attempt to fix".
+  if (sendToAME) {
+    if (app.project.renderQueue.canQueueInAME) {
+      app.project.renderQueue.queueInAME(false);
+      alert("✅ Композиции отправлены в очередь Adobe Media Encoder.");
+    } else {
+      alert("Adobe Media Encoder недоступен. Композиции остались в очереди рендера After Effects.");
+    }
+  } else {
+    alert("✅ Композиции добавлены в очередь рендера.");
   }
 }
 
