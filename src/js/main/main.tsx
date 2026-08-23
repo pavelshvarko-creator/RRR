@@ -40,7 +40,6 @@ const LANG_CODES = ["EN", "AR", "DA", "DE", "ES", "FI", "FR", "IT", "JA", "KO", 
 export const App = () => {
   const [bgColor, setBgColor] = useState("#282c34");
   const [lang, setLang] = useState("EN");
-  const [name, setName] = useState("");
   const [customLangMode, setCustomLangMode] = useState(false);
   const [customLangValue, setCustomLangValue] = useState("");
   const [useIcons, setUseIcons] = useState(true);
@@ -87,12 +86,7 @@ export const App = () => {
     // NameSetupDialog ниже), чтобы панель успевала нормально отрисоваться
     // независимо от того, ответит ли пользователь на запрос сразу.
     evalTS("getSavedCreatorName").then((saved) => {
-      if (saved) {
-        setName(saved);
-        setNameSetupNeeded(false);
-        return;
-      }
-      setNameSetupNeeded(true);
+      setNameSetupNeeded(!saved);
     });
 
     // Тумблер "иконки / стандартные кнопки" переключается в гайде, но
@@ -205,7 +199,7 @@ export const App = () => {
     // AE — и сохранит выбор навсегда (app.settings), без каких-либо
     // зашитых в расширение шаблонов. Ctrl+Клик — те же render-queue items
     // дополнительно отправляются в Adobe Media Encoder (см. renderButtonClick).
-    evalTS("renderButtonClick", lang, name, e.ctrlKey);
+    evalTS("renderButtonClick", lang, e.ctrlKey);
   };
 
   const handleCollectClick = (e: React.MouseEvent) => {
@@ -228,7 +222,7 @@ export const App = () => {
       setCustomLangMode(true);
       return;
     }
-    evalTS("onLanguageChange", code, lang, name).then((success) => {
+    evalTS("onLanguageChange", code, lang).then((success) => {
       if (success) setLang(code);
     });
   };
@@ -237,7 +231,7 @@ export const App = () => {
     const code = customLangValue.toUpperCase();
     setCustomLangMode(false);
     if (code.length !== 2) return;
-    evalTS("onLanguageChange", code, lang, name).then((success) => {
+    evalTS("onLanguageChange", code, lang).then((success) => {
       if (success) setLang(code);
     });
   };
@@ -305,7 +299,6 @@ export const App = () => {
   const handleNameSetupSubmit = () => {
     const entered = nameSetupValue.trim();
     if (!entered) return;
-    setName(entered);
     evalTS("saveCreatorName", entered, lang);
     setNameSetupNeeded(false);
   };

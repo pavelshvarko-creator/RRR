@@ -372,14 +372,87 @@ export function saveCreatorNameOnly(name: string) {
 }
 
 // Выбор нового языка в дропдауне: дублирует выделенную (двубуквенную) папку под новый язык.
-export function onLanguageChange(newLang: string, currentLang: string, creatorName: string): boolean {
+// Ник берём заново из app.settings (getSavedCreatorName), а не принимаем
+// параметром из React-состояния главной панели: ник можно отдельно
+// поменять в окне гайда (свой, независимый CEP-инстанс), и если панель
+// была открыта раньше этого изменения, её собственное состояние осталось
+// бы старым — тогда пересохранение здесь тем же устаревшим значением
+// откатывало бы только что введённый в гайде ник обратно.
+export function onLanguageChange(newLang: string, currentLang: string): boolean {
   var proj = app.project;
   var selectedItems = proj.selection;
+  var creatorName = getSavedCreatorName();
 
-  // Композиции выбраны напрямую (не папка) — просто меняем/добавляем
-  // суффикс языка у КАЖДОЙ из них (для любого языка, включая EN), без
-  // дубликата и без папок — та же формула суффикса, что и везде в скрипте.
-  // Работает и на одну, и на несколько выделенных сразу.
+  // Папка — в приоритете над отдельными композициями. Важно: AE при
+  // выделении папки в Project часто добавляет в proj.selection не только
+  // саму папку, но и её дочерние композиции — если бы мы сначала проверяли
+  // "есть ли выделенные композиции", это срабатывало бы вместо
+  // дублирования папки и просто переименовывало бы её содержимое на
+  // месте. Поэтому ищем папку СНАЧАЛА, и если она есть — работаем только
+  // с ней, игнорируя любые композиции, которые попали в selection вместе
+  // с ней.
+  var selectedFolder: FolderItem | null = null;
+  for (var fi = 0; fi < selectedItems.length; fi++) {
+    if (selectedItems[fi] instanceof FolderItem) {
+      selectedFolder = selectedItems[fi] as FolderItem;
+      break;
+    }
+  }
+
+  if (selectedFolder) {
+    // EN — особый случай: переименовываем выделенную папку на месте, без
+    // дубликата. Работает с ЛЮБОЙ папкой с композициями (не обязательно
+    // уже двубуквенной) — так исходную/непомеченную папку можно один раз
+    // назначить базовым языком EN. Дубликат создаётся только при выборе
+    // остальных языков (см. ветку ниже).
+    if (newLang === "EN") {
+      var seenIDs: { [id: number]: boolean } = {};
+      var foundComps: CompItem[] = [];
+      collectCompsInFolder(selectedFolder, seenIDs, foundComps);
+      if (foundComps.length === 0) {
+        alert("Пожалуйста, выделите папку с композициями.");
+        return false;
+      }
+      app.beginUndoGroup("Rename Folder to EN");
+      try {
+        selectedFolder.name = "EN";
+        saveLangCreatorSettings(newLang, creatorName);
+        alert("✅ Папка переименована в \"EN\".");
+        return true;
+      } catch (e: any) {
+        alert("Ошибка: " + e.toString());
+        return false;
+      } finally {
+        app.endUndoGroup();
+      }
+    }
+
+    if (selectedFolder.name.length !== 2) {
+      alert("Пожалуйста, выделите папку с двубуквенным названием языка (например EN, ES).");
+      return false;
+    }
+
+    var success = false;
+    app.beginUndoGroup("Duplicate Language Folder");
+    try {
+      var newFolderItem = duplicateFolderWithLanguage(selectedFolder, newLang, currentLang);
+      if (newFolderItem) {
+        saveLangCreatorSettings(newLang, creatorName);
+        alert("✅ Папка \"" + newLang + "\" создана с дублированными композициями.");
+        success = true;
+      }
+    } catch (e: any) {
+      alert("Ошибка: " + e.toString());
+    } finally {
+      app.endUndoGroup();
+    }
+    return success;
+  }
+
+  // Никакой папки в выделении нет — композиции выбраны напрямую. Просто
+  // меняем/добавляем суффикс языка у КАЖДОЙ из них (для любого языка,
+  // включая EN), без дубликата и без папок — та же формула суффикса, что
+  // и везде в скрипте. Работает и на одну, и на несколько выделенных сразу.
   var selectedComps: CompItem[] = [];
   for (var ci = 0; ci < selectedItems.length; ci++) {
     if (selectedItems[ci] instanceof CompItem) selectedComps.push(selectedItems[ci] as CompItem);
@@ -401,70 +474,8 @@ export function onLanguageChange(newLang: string, currentLang: string, creatorNa
     }
   }
 
-  // EN — особый случай: переименовываем выделенную папку на месте, без
-  // дубликата. Работает с ЛЮБОЙ папкой с композициями (не обязательно уже
-  // двубуквенной) — так исходную/непомеченную папку можно один раз
-  // назначить базовым языком EN. Дубликат создаётся только при выборе
-  // остальных языков (см. ветку ниже).
-  if (newLang === "EN") {
-    var folderToRename: FolderItem | null = null;
-    for (var fi = 0; fi < selectedItems.length; fi++) {
-      var fItem = selectedItems[fi];
-      if (fItem instanceof FolderItem) {
-        var seenIDs: { [id: number]: boolean } = {};
-        var foundComps: CompItem[] = [];
-        collectCompsInFolder(fItem, seenIDs, foundComps);
-        if (foundComps.length > 0) { folderToRename = fItem; break; }
-      }
-    }
-    if (!folderToRename) {
-      alert("Пожалуйста, выделите папку с композициями.");
-      return false;
-    }
-    app.beginUndoGroup("Rename Folder to EN");
-    try {
-      folderToRename.name = "EN";
-      saveLangCreatorSettings(newLang, creatorName);
-      alert("✅ Папка переименована в \"EN\".");
-      return true;
-    } catch (e: any) {
-      alert("Ошибка: " + e.toString());
-      return false;
-    } finally {
-      app.endUndoGroup();
-    }
-  }
-
-  // Ищем выбранную папку с двубуквенным именем
-  var selectedFolder: FolderItem | null = null;
-  for (var si = 0; si < selectedItems.length; si++) {
-    var item = selectedItems[si];
-    if (item instanceof FolderItem && item.name.length === 2) {
-      selectedFolder = item;
-      break;
-    }
-  }
-
-  if (!selectedFolder) {
-    alert("Пожалуйста, выделите папку с двубуквенным названием языка (например EN, ES).");
-    return false;
-  }
-
-  var success = false;
-  app.beginUndoGroup("Duplicate Language Folder");
-  try {
-    var newFolderItem = duplicateFolderWithLanguage(selectedFolder, newLang, currentLang);
-    if (newFolderItem) {
-      saveLangCreatorSettings(newLang, creatorName);
-      alert("✅ Папка \"" + newLang + "\" создана с дублированными композициями.");
-      success = true;
-    }
-  } catch (e: any) {
-    alert("Ошибка: " + e.toString());
-  } finally {
-    app.endUndoGroup();
-  }
-  return success;
+  alert("Пожалуйста, выделите папку с композициями.");
+  return false;
 }
 
 // === Версионный формат имён: V?__WxH ===
@@ -1321,7 +1332,10 @@ function pickOutputModuleTemplate(templates: string[]): string {
   return result;
 }
 
-export function renderButtonClick(lang: string, creatorName: string, sendToAME?: boolean) {
+// Ник берём заново из app.settings (getSavedCreatorName), не параметром —
+// та же причина, что и у onLanguageChange: ник может быть только что
+// изменён в окне гайда, и кэш главной панели устарел бы.
+export function renderButtonClick(lang: string, sendToAME?: boolean) {
   // Все проверки — ДО beginUndoGroup, чтобы ранний return никогда
   // не оставлял незакрытую undo-группу (это ломало повторные клики).
   var proj = app.project;
@@ -1350,8 +1364,8 @@ export function renderButtonClick(lang: string, creatorName: string, sendToAME?:
   try {
     var projectName = proj.file ? proj.file.name.replace(/\.[^\.]+$/, "") : "Untitled_Project";
     var desktopPath = Folder.desktop.fsName;
-    var creator = creatorName;
-    saveLangCreatorSettings(lang, creatorName);
+    var creator = getSavedCreatorName();
+    saveLangCreatorSettings(lang, creator);
 
     // Своя корневая папка на рабочем столе на каждый язык — имя проекта +
     // суффикс языка (например "07.26_CB_123_FR"). Для EN (язык по умолчанию)
