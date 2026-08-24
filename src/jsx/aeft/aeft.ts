@@ -117,7 +117,7 @@ function stripLanguageSuffix(name: string) {
   return name;
 }
 
-// Достаёт код языка из суффикса имени композиции ("V1__1920x1080_EN" -> "EN").
+// Достаёт код языка из суффикса имени композиции ("v1__1920x1080_EN" -> "EN").
 // Возвращает null, если распознаваемого суффикса нет.
 function extractLanguageCodeFromName(name: string) {
   var m = name.match(/^(.*)_([A-Za-z]{2})$/);
@@ -348,6 +348,31 @@ export function pickFolder(): string {
   return f ? f.fsName : "";
 }
 
+// Переключает (открыть/закрыть) пункт меню Window по его точному тексту —
+// работает и для ScriptUI-скрипта (label — имя файла), и для CEP-
+// расширения (label — текст из <Menu> в его манифесте): у AE это ОДНА и
+// та же системная команда меню, findMenuCommandId/executeCommand,
+// поведение — переключатель, а не только "открыть" (в отличие от
+// csi.requestOpenExtension, который умеет только открывать). AE сканирует
+// список ScriptUI-скриптов один раз при старте — если скрипт добавлен в
+// Scripts/ScriptUI Panels уже после запуска AE, findMenuCommandId его не
+// найдёт до перезапуска AE, поэтому явно сообщаем об этом отдельно.
+export function toggleWindowMenuItem(label: string): void {
+  try {
+    var id = app.findMenuCommandId(label);
+    if (!id) {
+      alert(
+        "Не найден пункт меню Window для \"" + label + "\".\n" +
+        "Если это ScriptUI-скрипт, добавленный в Scripts/ScriptUI Panels уже после запуска AE — перезапустите AE."
+      );
+      return;
+    }
+    app.executeCommand(id);
+  } catch (e: any) {
+    alert("Ошибка: " + e.toString());
+  }
+}
+
 // При каждом новом запуске язык всегда начинается с EN. Name запоминается между запусками.
 export function getSavedCreatorName(): string {
   if (app.settings.haveSetting(SETTINGS_SECTION, SETTINGS_KEY_CREATOR)) {
@@ -520,7 +545,7 @@ function getNextVersionInFolder(folder: FolderItem | null, w: number, h: number)
 }
 
 function buildProjectName(version: string, w: number, h: number) {
-  return "V" + version + "__" + w + "x" + h;
+  return "v" + version + "__" + w + "x" + h;
 }
 
 function buildTimelineName(oldName: string, w: number, h: number) {
@@ -577,7 +602,7 @@ function duplicateCompVersionGraph(sourceComp: CompItem, newVersion: number, lan
     if (orig === sourceComp) {
       dup.name = buildProjectName(String(newVersion), w, h) + "_" + lang;
     } else {
-      dup.name = orig.name + "_V" + newVersion;
+      dup.name = orig.name + "_v" + newVersion;
       applyVersionLabel(dup);
     }
     compMap[orig.id] = dup;
@@ -878,7 +903,7 @@ function createSafeZoneGuideComp() {
   var lineColor = [0x06 / 255, 0x6C / 255, 0xE7 / 255]; // 066CE7
   var lineThickness = 4;
 
-  var comp = proj.items.addComp("V1__1080x1920_EN", compW, compH, 1, durationSec, frameRate);
+  var comp = proj.items.addComp("v1__1080x1920_EN", compW, compH, 1, durationSec, frameRate);
   applyVersionLabel(comp);
 
   var shapeLayer = comp.layers.addShape();
@@ -1393,13 +1418,24 @@ export function renderButtonClick(lang: string, sendToAME?: boolean) {
       var width = comp.width;
       var height = comp.height;
       var durationSec = Math.ceil(comp.workAreaDuration);
+      // v1, не V1 — та же студийная конвенция, что и у самих композиций
+      // (см. buildProjectName). Регэксп ниже — [Vv], чтобы старые
+      // проекты с заглавной V тоже подхватывались.
       var versionMatch = comp.name.match(/[Vv]\d+/);
-      var version = versionMatch ? ("V" + versionMatch[0].replace(/[Vv]/, "")) : "V1";
+      var versionNum = versionMatch ? versionMatch[0].replace(/[Vv]/, "") : "1";
+      var version = "v" + versionNum;
       var resolutionFolderName = width + "x" + height;
       var langBaseFolder = getLangBaseFolder(langCode);
       var resFolder = new Folder(langBaseFolder.fsName + "/" + resolutionFolderName);
       if (!resFolder.exists) resFolder.create();
-      var safeFileName = projectName + "_video_" + version + "__" + resolutionFolderName + "_" + durationSec + "s_" + langCode + "_" + creator;
+      // Имя проекта в студийной конвенции содержит плейсхолдер-цифру
+      // версии сразу после первой точки, перед "+" (например
+      // "26.08_3D_4.0+4.0-Mob-New-..." -> "4.0" перед "+4.0"). В имени
+      // ФАЙЛА рендера эта цифра заменяется на номер версии текущей
+      // композиции — папка на рабочем столе (getLangBaseFolder) при этом
+      // не трогается, она общая на все версии одного батча рендера.
+      var projectNameForFile = projectName.replace(/(\d+\.)(\d+)(\+)/, "$1" + versionNum + "$3");
+      var safeFileName = projectNameForFile + "_video_" + version + "__" + resolutionFolderName + "_" + durationSec + "s_" + langCode + "_" + creator;
       try {
         var rqItem = app.project.renderQueue.items.add(comp);
         var om = rqItem.outputModule(1);
@@ -1515,7 +1551,24 @@ export function collectButtonClick(lang: string, ctrlKey: boolean) {
   // плюс шаг 6 (нативный Collect Files).
   if (!ctrlKey) return;
 
-  // 6) Сам сбор файлов — через РОДНУЮ команду AE "Collect Files", а не своим кодом.
+  // Выделяем в Project именно собранные выше композиции — после
+  // reduceProject/сортировки по папкам ссылки на те же CompItem остаются
+  // валидными, просто в новом месте. Без этого нативный диалог "Collect
+  // Files..." ниже не предлагает "For Selected Comps" (в Project на этот
+  // момент могла быть выделена языковая ПАПКА, а не сами композиции) —
+  // приходилось выделять композиции руками, что накладно при нескольких
+  // языковых папках сразу. project.selection — ДЕЙСТВИТЕЛЬНО read-only
+  // (предыдущая попытка присвоить его напрямую бросала ошибку и обрывала
+  // функцию до открытия диалога) — выделение выставляется через
+  // .selected на каждом айтеме отдельно.
+  for (var deselIdx = 1; deselIdx <= proj.numItems; deselIdx++) {
+    try { proj.item(deselIdx).selected = false; } catch (_) {}
+  }
+  for (var selIdx = 0; selIdx < selectedComps.length; selIdx++) {
+    try { selectedComps[selIdx].selected = true; } catch (_) {}
+  }
+
+  // Сам сбор файлов — через РОДНУЮ команду AE "Collect Files", а не своим кодом.
   // У скриптового API нет способа переподключить многослойный PSD/AI с сохранением
   // привязки к конкретному слою: item.replace()/replaceWithSequence() всегда
   // подставляют файл целиком (смёрженным). У нативной команды этой проблемы нет —

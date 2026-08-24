@@ -3,7 +3,14 @@ export type CustomButtonAction =
   | { kind: "expression"; code: string }
   | { kind: "link"; url: string }
   | { kind: "program"; path: string }
-  | { kind: "folder"; path: string };
+  | { kind: "folder"; path: string }
+  // label — точный текст пункта меню Window в AE (имя файла для ScriptUI-
+  // скрипта, название из <Menu> манифеста для CEP-расширения). Запускается
+  // через findMenuCommandId/executeCommand — та же системная команда,
+  // что стоит за самим пунктом меню Window, поэтому кнопка не просто
+  // открывает, а ПЕРЕКЛЮЧАЕТ панель (открыть/закрыть), как в самом AE —
+  // для обоих видов одинаково, без разделения на подтипы.
+  | { kind: "installed"; label: string };
 
 export type CustomButtonDef = {
   id: string;

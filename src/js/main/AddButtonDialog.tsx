@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { evalTS } from "../lib/utils/bolt";
 import type { CustomButtonDef, CustomButtonAction, ButtonHistoryEntry } from "../../shared/customButtons";
 import { readFileAsText, readImageAsDataURL, loadAndScaleIcon } from "../lib/buttons/icon";
 import { extractProgramIconAsFile } from "../lib/buttons/programIcon";
+import { listScriptUIPanels, listCepExtensions, type InstalledItem } from "../lib/buttons/installedItems";
 import { ButtonHistoryGrid } from "./ButtonHistoryGrid";
 import { IconPickerModal } from "./IconPickerModal";
 
@@ -14,6 +15,7 @@ const ACTION_LABELS: Record<ActionKind, string> = {
   link: "Ссылка",
   program: "Программа на ПК",
   folder: "Открыть папку",
+  installed: "CEP & ScriptUI",
 };
 
 const CODE_FILE_HINT = "Можно загрузить файлом или ввести/вставить код вручную ниже.";
@@ -29,6 +31,7 @@ function actionFromDef(action: CustomButtonAction) {
     linkUrl: action.kind === "link" ? action.url : "",
     programPath: action.kind === "program" ? action.path : "",
     folderPath: action.kind === "folder" ? action.path : "",
+    installedValue: action.kind === "installed" ? action.label : "",
   };
 }
 
@@ -53,12 +56,34 @@ export const AddButtonDialog = ({
   const [linkUrl, setLinkUrl] = useState(seed?.linkUrl || "");
   const [programPath, setProgramPath] = useState(seed?.programPath || "");
   const [folderPath, setFolderPath] = useState(seed?.folderPath || "");
+  const [installedValue, setInstalledValue] = useState(seed?.installedValue || "");
+  const [scriptUIPanels, setScriptUIPanels] = useState<InstalledItem[]>([]);
+  const [cepExtensions, setCepExtensions] = useState<InstalledItem[]>([]);
   const [iconDataUrl, setIconDataUrl] = useState<string | null>(editingDef?.iconDataUrl ?? null);
   const [iconWidth, setIconWidth] = useState(editingDef?.iconWidth ?? 56);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [pickingProgram, setPickingProgram] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Списки для типа "CEP & ScriptUI" — грузим один раз при открытии
+  // диалога (не только при выборе этого типа), чтобы переключение на него
+  // не показывало пустой дропдаун с задержкой.
+  useEffect(() => {
+    listScriptUIPanels().then(setScriptUIPanels).catch((e) => {
+      console.error("listScriptUIPanels", e);
+      setError((prev) => prev || `Не удалось получить список ScriptUI-скриптов: ${e?.message || e}`);
+    });
+    listCepExtensions().then(setCepExtensions).catch((e) => {
+      console.error("listCepExtensions", e);
+      setError((prev) => prev || `Не удалось получить список CEP-расширений: ${e?.message || e}`);
+    });
+  }, []);
+
+  const handleInstalledChange = (value: string) => {
+    setInstalledValue(value);
+    if (!tooltip.trim() && value) setTooltip(value.replace(/\.(jsx|jsxbin)$/i, ""));
+  };
 
   const handleDescriptionGifChange = async (file: File | undefined) => {
     if (!file) return;
@@ -193,6 +218,12 @@ export const AddButtonDialog = ({
         return;
       }
       action = { kind: "folder", path: folderPath.trim() };
+    } else if (actionKind === "installed") {
+      if (!installedValue) {
+        setError("Выберите скрипт или расширение из списка.");
+        return;
+      }
+      action = { kind: "installed", label: installedValue };
     } else {
       if (!programPath.trim()) {
         setError("Выберите программу.");
@@ -218,7 +249,7 @@ export const AddButtonDialog = ({
   };
 
   const isCodeKind = actionKind === "script" || actionKind === "expression";
-  const showDescriptionFields = actionKind !== "program" && actionKind !== "folder";
+  const showDescriptionFields = actionKind !== "program" && actionKind !== "folder" && actionKind !== "installed";
 
   return (
     <div className="rrr-modal-overlay" onClick={onClose}>
@@ -303,7 +334,34 @@ export const AddButtonDialog = ({
               </div>
             )}
 
-            {actionKind === "link" && (
+            {actionKind === "installed" && (
+              <label className="rrr-modal-field">
+                Скрипт или расширение
+                <select value={installedValue} onChange={(e) => handleInstalledChange(e.target.value)}>
+                  <option value="" disabled>Выберите из списка…</option>
+                  {scriptUIPanels.length > 0 && (
+                    <optgroup label="ScriptUI-скрипты">
+                      {scriptUIPanels.map((item) => (
+                        <option key={item.label} value={item.label}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {cepExtensions.length > 0 && (
+                    <optgroup label="CEP-расширения">
+                      {cepExtensions.map((item) => (
+                        <option key={item.label} value={item.label}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+            )}
+
+            {(actionKind === "link" || actionKind === "installed") && (
               <div className="rrr-modal-field">
                 <div className="rrr-icon-choose-row">
                   <button type="button" className="rrr-std-btn rrr-wide-btn" onClick={() => setShowIconPicker(true)}>

@@ -64,7 +64,7 @@ export const App = () => {
   // адаптивный блок). Но при действительно экстремальном сужении (порог
   // задан явно, а не выведен из общей механики) весь блок добавленных
   // кнопок принудительно встаёт в один столбец.
-  const NARROW_PANEL_THRESHOLD = 100;
+  const NARROW_PANEL_THRESHOLD = 114;
   const [panelNarrow, setPanelNarrow] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 

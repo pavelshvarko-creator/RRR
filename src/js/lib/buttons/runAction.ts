@@ -31,6 +31,11 @@ export async function runCustomButtonAction(def: CustomButtonDef): Promise<void>
       child_process.exec(`start "" "${action.path}"`, (err) => {
         if (err) alert(`Не удалось открыть папку: ${err.message}`);
       });
+    } else if (action.kind === "installed") {
+      // Один и тот же переключатель для ScriptUI-скрипта и CEP-расширения
+      // (см. toggleWindowMenuItem в aeft.ts) — открывает панель, если она
+      // закрыта, и закрывает, если уже открыта, как в самом меню Window.
+      await evalTS("toggleWindowMenuItem", action.label);
     }
   } catch (e: any) {
     alert(`Ошибка кнопки "${def.tooltip}": ${e?.message || String(e)}`);
