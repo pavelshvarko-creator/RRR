@@ -106,31 +106,54 @@ export const downloadAndInstallUpdate = async (downloadUrl: string, allowElevati
     // Копируем staging -> extensionDir обычным способом. Некоторые файлы
     // (например бандл уже открытого окна гайда) в момент обновления могут
     // быть кратковременно заняты — даём несколько попыток с паузой.
+    const entries = zip.getEntries().filter((e: any) => !e.isDirectory);
+
+    // fs.copyFileSync может отрапортовать успех, а итоговый файл на диске
+    // всё равно не совпасть с тем, что мы только что скопировали — на
+    // некоторых машинах (замечено на реальных установках у команды)
+    // antivirus/EDR успевает подменить или откатить файл уже ПОСЛЕ
+    // записи, не бросая при этом исключения в момент самого copyFileSync.
+    // Раньше это приводило к тому, что панель показывала "Обновление...
+    // установлено", а часть файлов (например jsx/index.js) на деле
+    // оставалась старой — отсюда "функция не определена" в уже
+    // добавленных кнопках после видимо успешного обновления. Проверяем
+    // РЕАЛЬНЫЙ размер файла на диске по каждому entry, а не просто
+    // отсутствие исключения при копировании.
+    function verifyCopied(entry: any): boolean {
+      const targetPath = path.join(extensionDir, entry.entryName);
+      try {
+        return fs.statSync(targetPath).size === entry.header.size;
+      } catch (_) {
+        return false;
+      }
+    }
+
     const failedEntries: string[] = [];
-    for (const entry of zip.getEntries()) {
-      if (entry.isDirectory) continue;
+    for (const entry of entries) {
       const srcPath = path.join(stagingDir, entry.entryName);
       const targetPath = path.join(extensionDir, entry.entryName);
 
-      let written = false;
-      for (let attempt = 0; attempt < 3 && !written; attempt++) {
+      let ok = false;
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
         try {
           fs.mkdirSync(path.dirname(targetPath), { recursive: true });
           fs.copyFileSync(srcPath, targetPath);
-          written = true;
+          ok = verifyCopied(entry);
         } catch (e) {
-          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+          ok = false;
         }
+        if (!ok) await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
       }
-      if (!written) failedEntries.push(entry.entryName);
+      if (!ok) failedEntries.push(entry.entryName);
     }
 
-    // Если часть файлов не записалась обычным способом — почти всегда это
-    // означает, что папка расширения защищена от записи без прав
-    // администратора. Системный запрос прав (UAC) показываем только когда
-    // это явно разрешено (клик по кнопке "Обновить") — тихая автопроверка
-    // при каждом открытии панели НЕ должна неожиданно всплывать с диалогом
-    // Windows, поэтому там allowElevation=false и ошибка просто уходит выше.
+    // Если часть файлов не записалась/не подтвердилась обычным способом —
+    // почти всегда это означает, что папка расширения защищена от записи
+    // без прав администратора (реже — антивирус). Системный запрос прав
+    // (UAC) показываем только когда это явно разрешено (клик по кнопке
+    // "Обновить") — тихая автопроверка при каждом открытии панели НЕ
+    // должна неожиданно всплывать с диалогом Windows, поэтому там
+    // allowElevation=false и ошибка просто уходит выше.
     if (failedEntries.length > 0) {
       if (!allowElevation) {
         throw new Error("Не удалось обновить файлы: " + failedEntries.join(", "));
@@ -140,6 +163,15 @@ export const downloadAndInstallUpdate = async (downloadUrl: string, allowElevati
       } catch (elevateErr: any) {
         throw new Error(
           "Не удалось обновить файлы даже с правами администратора: " + failedEntries.join(", ")
+        );
+      }
+      // Тот же самый факт "исключения не было" ничего не гарантирует —
+      // проверяем итоговый результат и здесь, уже после elevated-копирования.
+      const stillFailed = failedEntries.filter((name) => !verifyCopied(entries.find((e: any) => e.entryName === name)));
+      if (stillFailed.length > 0) {
+        throw new Error(
+          "Часть файлов не обновилась даже после запроса прав администратора: " + stillFailed.join(", ") +
+          ". Полностью закройте After Effects (не только панель) и повторите обновление."
         );
       }
     }

@@ -38,6 +38,17 @@ export async function runCustomButtonAction(def: CustomButtonDef): Promise<void>
       await evalTS("toggleWindowMenuItem", action.label);
     }
   } catch (e: any) {
-    alert(`Ошибка кнопки "${def.tooltip}": ${e?.message || String(e)}`);
+    const message = e?.message || String(e);
+    // "is undefined" на функции host[ns].<имя> — расширение обновилось
+    // частично (JS-часть новее ExtendScript-части, см. downloadAndInstallUpdate)
+    // — типичная не-техническая формулировка вместо сырого сообщения движка.
+    if (/is undefined/i.test(message) && /host\[/i.test(message)) {
+      alert(
+        `Ошибка кнопки "${def.tooltip}": расширение обновилось не полностью.\n` +
+        `Полностью закройте After Effects (не только панель) и нажмите "Обновить" в гайде ещё раз.`
+      );
+      return;
+    }
+    alert(`Ошибка кнопки "${def.tooltip}": ${message}`);
   }
 }

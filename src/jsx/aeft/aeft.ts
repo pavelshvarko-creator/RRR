@@ -357,7 +357,13 @@ export function pickFolder(): string {
 // список ScriptUI-скриптов один раз при старте — если скрипт добавлен в
 // Scripts/ScriptUI Panels уже после запуска AE, findMenuCommandId его не
 // найдёт до перезапуска AE, поэтому явно сообщаем об этом отдельно.
-export function toggleWindowMenuItem(label: string): void {
+// Возвращает boolean, а не void — у evalTS-моста (bolt.ts) есть краевой
+// случай: JSON.stringify(undefined) в самой ExtendScript падает с
+// ошибкой, и вызывающая кнопка получала "ошибку", хотя команда меню уже
+// отработала. Эта функция была первой в проекте, у которой возврат
+// реально void — у остальных evalTS-функций всегда есть содержательное
+// значение, поэтому баг раньше не всплывал.
+export function toggleWindowMenuItem(label: string): boolean {
   try {
     var id = app.findMenuCommandId(label);
     if (!id) {
@@ -365,11 +371,13 @@ export function toggleWindowMenuItem(label: string): void {
         "Не найден пункт меню Window для \"" + label + "\".\n" +
         "Если это ScriptUI-скрипт, добавленный в Scripts/ScriptUI Panels уже после запуска AE — перезапустите AE."
       );
-      return;
+      return false;
     }
     app.executeCommand(id);
+    return true;
   } catch (e: any) {
     alert("Ошибка: " + e.toString());
+    return false;
   }
 }
 
@@ -1499,6 +1507,31 @@ export function collectButtonClick(lang: string, ctrlKey: boolean) {
   for (var li = 0; li < selectedComps.length; li++) {
     var lc = selectedComps[li];
     compLangs[lc.id] = getLanguageFromFolderHierarchy(lc.parentFolder, lang);
+  }
+
+  // Проверка ДО любых изменений в проекте: что именно удалит reduceProject
+  // (шаг 4 ниже) — всё, что не входит в граф выделенных композиций (сами
+  // выделенные + их вложенные precomp-зависимости, та же логика, что и у
+  // дублирования языковых папок). Если среди того, что будет удалено, есть
+  // версионные композиции (v1, v2... в имени) — предупреждаем списком и
+  // даём отменить весь Collect, ничего ещё не тронув в проекте.
+  var keptIDs: { [id: number]: boolean } = {};
+  for (var kc = 0; kc < selectedComps.length; kc++) {
+    var keptGraph = collectCompGraph(selectedComps[kc]);
+    for (var gi = 0; gi < keptGraph.length; gi++) keptIDs[keptGraph[gi].id] = true;
+  }
+  var toBeRemovedVersioned: string[] = [];
+  for (var pi2 = 1; pi2 <= proj.numItems; pi2++) {
+    var pItem2 = proj.item(pi2);
+    if (pItem2 instanceof CompItem && !keptIDs[pItem2.id] && /[Vv]\d+/.test(pItem2.name)) {
+      toBeRemovedVersioned.push(pItem2.name);
+    }
+  }
+  if (toBeRemovedVersioned.length > 0) {
+    var proceedWithRemoval = confirm(
+      "Композиции:\n" + toBeRemovedVersioned.join("\n") + "\nбудут удалены, продолжаем?"
+    );
+    if (!proceedWithRemoval) return;
   }
 
   app.beginUndoGroup("Rename + Organize + Reduce");
