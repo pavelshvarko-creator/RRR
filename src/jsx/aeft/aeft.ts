@@ -720,17 +720,21 @@ function processCropResolutionProject(key: string) {
   // Среди выделения отдельно собираем композиции, чьё разрешение уже
   // совпадает с целевым (переименование/новая версия), и отдельно все
   // остальные (кроп-ресайз) — обе группы обрабатываются целиком.
+  // getCompsFromSelection — та же функция, что и у collect/render: если
+  // выделена ПАПКА (например языковая или с разрешением, как на скрине
+  // пользователя — "1080x1920" с v1..v4 внутри), берутся все композиции
+  // внутри неё рекурсивно, а не только то, что выделено как CompItem
+  // напрямую.
   var selection = proj.selection;
+  var selectedComps = getCompsFromSelection(selection);
   var matchingComps: CompItem[] = [];
   var otherComps: CompItem[] = [];
-  for (var i = 0; i < selection.length; i++) {
-    if (selection[i] instanceof CompItem) {
-      var selComp = selection[i] as CompItem;
-      if (selComp.width === target.w && selComp.height === target.h) {
-        matchingComps.push(selComp);
-      } else {
-        otherComps.push(selComp);
-      }
+  for (var i = 0; i < selectedComps.length; i++) {
+    var selComp = selectedComps[i];
+    if (selComp.width === target.w && selComp.height === target.h) {
+      matchingComps.push(selComp);
+    } else {
+      otherComps.push(selComp);
     }
   }
 
