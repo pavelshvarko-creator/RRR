@@ -35,7 +35,7 @@ import iconPlus from "../assets/RRR/+.png";
 import iconPlusHover from "../assets/RRR/+_1.png";
 import iconPlusPressed from "../assets/RRR/+_2.png";
 
-const LANG_CODES = ["EN", "AR", "DA", "DE", "ES", "FI", "FR", "IT", "JA", "KO", "NL", "SV", "TH"];
+const LANG_CODES = ["EN", "AR", "DA", "DE", "ES", "FI", "FR", "IT", "JA", "KO", "NL", "PT", "SV", "TH", "TR", "VN"];
 
 export const App = () => {
   const [bgColor, setBgColor] = useState("#282c34");

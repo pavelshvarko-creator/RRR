@@ -105,8 +105,11 @@ var LANGUAGES: { [code: string]: string } = {
   "JA": "Japanese",
   "KO": "Korean",
   "NL": "Dutch",
+  "PT": "Portuguese",
   "SV": "Swedish",
-  "TH": "Thai"
+  "TH": "Thai",
+  "TR": "Turkish",
+  "VN": "Vietnamese"
 };
 
 // Убирает существующий суффикс языка ("_ES" и т.п.), если имя уже им заканчивается —
